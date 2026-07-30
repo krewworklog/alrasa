@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Al Rasa — Sales & Collection</title>
+<style>
+  :root{
+    --bg:#0e1116; --s1:#161b22; --s2:#1c232d; --border:#2a323d;
+    --ink:#e6edf3; --ink2:#9aa7b4; --ink3:#6b7783;
+    --accent:#3b82f6; --accent-g:rgba(59,130,246,.15);
+    --green:#22c55e; --green-b:rgba(34,197,94,.14);
+    --amber:#f59e0b; --amber-b:rgba(245,158,11,.14);
+    --red:#ef4444; --red-b:rgba(239,68,68,.14);
+    --purple:#a855f7;
+    --font:'SF Mono',ui-monospace,Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --rl:12px; --rm:9px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased}
+  input,select,textarea,button{font-family:inherit;font-size:14px;color:var(--ink)}
+  input,select,textarea{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:var(--rm);padding:9px 11px;outline:none}
+  input:focus,select,textarea:focus{border-color:var(--accent)}
+  textarea{resize:vertical;min-height:52px}
+  label{display:block;font-size:12px;color:var(--ink2);margin-bottom:5px;font-weight:600}
+  .btn{border:none;border-radius:var(--rm);padding:9px 16px;font-weight:600;cursor:pointer;background:var(--s2);color:var(--ink);border:1px solid var(--border)}
+  .btn:hover{opacity:.9}
+  .btn-primary{background:var(--accent);border-color:transparent;color:#fff}
+  .btn-danger{background:transparent;border-color:var(--border);color:var(--red)}
+  .btn-sm{padding:6px 12px;font-size:13px}
+  .btn-xs{padding:4px 9px;font-size:12px}
+  .screen{display:none;min-height:100vh}
+  .screen.active{display:block}
+  /* login / setup */
+  .auth-wrap{max-width:380px;margin:0 auto;padding:10vh 1.25rem}
+  .brand{font-size:22px;font-weight:800;letter-spacing:-.02em}
+  .brand span{color:var(--accent)}
+  .auth-sub{color:var(--ink2);font-size:13px;margin:4px 0 1.5rem}
+  .card{background:var(--s1);border:1px solid var(--border);border-radius:var(--rl);padding:1.1rem}
+  .f{margin-bottom:.85rem}
+  .err{color:var(--red);font-size:12px;margin-top:8px;display:none}
+  /* app shell */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:var(--s1);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
+  .topbar-l{display:flex;align-items:center;gap:10px;min-width:0}
+  .chip{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 9px;border-radius:20px;background:var(--accent-g);color:var(--accent)}
+  .clock{font-size:12px;color:var(--ink2)}
+  .logout{font-size:12px;color:var(--ink3);cursor:pointer}
+  .body{display:flex}
+  .side{width:200px;flex-shrink:0;border-right:1px solid var(--border);padding:12px 8px;min-height:calc(100vh - 52px);position:sticky;top:52px;height:calc(100vh - 52px);overflow:auto}
+  .nav{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:var(--rm);cursor:pointer;color:var(--ink2);font-weight:500;font-size:13.5px}
+  .nav:hover{background:var(--s2)}
+  .nav.active{background:var(--accent-g);color:var(--accent)}
+  .content{flex:1;padding:1.25rem;max-width:1000px;min-width:0}
+  .ph{margin-bottom:1.1rem}
+  .pt{font-size:19px;font-weight:800;letter-spacing:-.01em}
+  .ps{font-size:13px;color:var(--ink2);margin-top:3px}
+  .page{display:none}
+  .page.active{display:block}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:1.1rem}
+  .sc{background:var(--s1);border:1px solid var(--border);border-radius:var(--rl);padding:14px}
+  .sl{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em}
+  .sv{font-size:24px;font-weight:800;margin-top:4px;font-family:var(--font)}
+  .ss{font-size:11px;color:var(--ink3);margin-top:2px}
+  .ct{font-size:12px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:9px 10px;font-size:13px;border-bottom:1px solid var(--border);white-space:nowrap}
+  th{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+  td.num,th.num{text-align:right;font-family:var(--font)}
+  .tbl-wrap{overflow-x:auto;background:var(--s1);border:1px solid var(--border);border-radius:var(--rl);padding:6px 10px}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px}
+  .t-ok{background:var(--green-b);color:var(--green)}
+  .t-am{background:var(--amber-b);color:var(--amber)}
+  .t-rd{background:var(--red-b);color:var(--red)}
+  .banner{padding:11px 15px;border-radius:var(--rm);font-size:13px;margin-bottom:1rem;display:flex;gap:8px}
+  .b-am{background:var(--amber-b);border:1px solid rgba(245,158,11,.3);color:var(--amber)}
+  .b-ok{background:var(--green-b);border:1px solid rgba(34,197,94,.3);color:var(--green)}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--s2);border:1px solid var(--border);border-radius:var(--rm);padding:10px 18px;font-size:13px;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+  .toast.err{border-color:var(--red);color:var(--red)}
+  .toast.ok{border-color:var(--green);color:var(--green)}
+  @media(max-width:720px){
+    .side{position:fixed;left:0;bottom:0;top:auto;width:100%;height:auto;min-height:0;display:flex;gap:4px;overflow-x:auto;border-right:none;border-top:1px solid var(--border);background:var(--s1);z-index:30;padding:8px}
+    .nav{flex-direction:column;font-size:11px;gap:3px;padding:6px 10px;white-space:nowrap}
+    .content{padding:1rem;padding-bottom:80px}
+    .grid2,.grid3{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- SETUP (first run) -->
+<div class="screen" id="screen-setup">
+  <div class="auth-wrap">
+    <div class="brand">Al&nbsp;Rasa <span>Collection</span></div>
+    <p class="auth-sub">First-time setup — paste your Google Apps Script Web App URL.</p>
+    <div class="card">
+      <div class="f"><label>Apps Script URL (ends in /exec)</label><input id="setup-url" placeholder="https://script.google.com/macros/s/.../exec"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="saveBackend()">Connect</button>
+      <p class="err" id="setup-err"></p>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div class="screen" id="screen-login">
+  <div class="auth-wrap">
+    <div class="brand">Al&nbsp;Rasa <span>Collection</span></div>
+    <p class="auth-sub">Al Rasa Pest Control — Sales & Collection</p>
+    <div class="card">
+      <div class="f"><label>Username</label><input id="l-user" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="f"><label>Password</label><input id="l-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Sign In</button>
+      <p class="err" id="l-err"></p>
+      <p style="font-size:11px;color:var(--ink3);margin-top:14px;text-align:center;cursor:pointer" onclick="resetBackend()">⚙ Reconfigure</p>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="screen" id="screen-app">
+  <div class="topbar">
+    <div class="topbar-l">
+      <span class="brand" style="font-size:16px">Al&nbsp;Rasa</span>
+      <span class="chip" id="role-chip">—</span>
+      <span class="clock" id="clock"></span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn btn-sm" onclick="sync()">↻</button>
+      <span id="me-name" style="font-size:13px;font-weight:600"></span>
+      <span class="logout" onclick="logout()">Sign out</span>
+    </div>
+  </div>
+  <div class="body">
+    <aside class="side" id="side"></aside>
+    <main class="content" id="content"></main>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let BACKEND_URL = localStorage.getItem('alrasa_url') || '';
+let AUTH = null;           // {username, password}
+let DB = null;             // full dataset
+let ME = null;             // {name, username, role}
+let curPage = null;
+
+const $ = id => document.getElementById(id);
+function show(scr){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); $(scr).classList.add('active'); }
+function toast(msg,type=''){ const t=$('toast'); t.textContent=msg; t.className='toast show '+type; setTimeout(()=>t.className='toast',2600); }
+function money(n){ return (Math.round((+n||0)*100)/100).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function todayStr(){ const d=new Date(Date.now()+4*3600*1000); return d.toISOString().slice(0,10); } // Dubai
+function nowClock(){ const d=new Date(Date.now()+4*3600*1000); return d.toISOString().slice(11,16); }
+
+async function api(action, params={}){
+  if(!BACKEND_URL) throw new Error('No backend configured');
+  const body = new URLSearchParams();
+  body.append('action', action);
+  if(AUTH){ body.append('username', AUTH.username); body.append('password', AUTH.password); }
+  for(const k in params){ const v=params[k]; body.append(k, typeof v==='object'?JSON.stringify(v):v); }
+  const res = await fetch(BACKEND_URL, { method:'POST', body });
+  const json = await res.json();
+  if(json.error) throw new Error(json.error);
+  return json;
+}
+
+// ---- setup / auth ----
+function saveBackend(){
+  const url = $('setup-url').value.trim();
+  const err = $('setup-err'); err.style.display='none';
+  if(!url.startsWith('https://script.google.com')){ err.textContent='Paste a valid Apps Script URL ending in /exec.'; err.style.display='block'; return; }
+  BACKEND_URL = url; localStorage.setItem('alrasa_url', url);
+  show('screen-login');
+}
+function resetBackend(){ if(confirm('Reconfigure the backend URL?')){ localStorage.removeItem('alrasa_url'); location.reload(); } }
+async function doLogin(){
+  const username = $('l-user').value.trim(), password = $('l-pass').value;
+  const err = $('l-err'); err.style.display='none';
+  if(!username||!password){ err.textContent='Enter username and password.'; err.style.display='block'; return; }
+  try{
+    const r = await api('login', { username, password });
+    if(!r.ok){ err.textContent=r.error||'Login failed.'; err.style.display='block'; return; }
+    AUTH = { username, password };
+    sessionStorage.setItem('alrasa_auth', JSON.stringify(AUTH));
+    await sync();
+    launch();
+  }catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
+}
+function logout(){ AUTH=null; DB=null; ME=null; sessionStorage.removeItem('alrasa_auth'); show('screen-login'); $('l-pass').value=''; }
+
+async function sync(){
+  try{ DB = await api('getAll'); ME = DB.me; if(curPage) renderPage(curPage); return DB; }
+  catch(e){ toast('Sync failed: '+e.message,'err'); if(String(e.message)==='auth') logout(); }
+}
+
+// ---- app shell ----
+const NAV = {
+  neethu:    [['invoicing','🧾 Invoicing']],
+  accountant:[['collection','💵 Collection'],['cheques','🏦 Cheques']],
+  owner:     [['dashboard','📊 Dashboard'],['tbc','📈 To Be Collected'],['invoicing','🧾 Invoicing'],['collection','💵 Collection'],['cheques','🏦 Cheques'],['settings','⚙ Settings']]
+};
+function launch(){
+  show('screen-app');
+  $('role-chip').textContent = ME.role;
+  $('me-name').textContent = ME.name;
+  const nav = NAV[ME.role] || [];
+  $('side').innerHTML = nav.map(([id,label])=>`<div class="nav" id="nav-${id}" onclick="go('${id}')">${label}</div>`).join('');
+  go(nav[0][0]);
+}
+function go(page){
+  curPage = page;
+  document.querySelectorAll('.nav').forEach(n=>n.classList.remove('active'));
+  const n=$('nav-'+page); if(n) n.classList.add('active');
+  renderPage(page);
+}
+function renderPage(page){
+  const el = $('content');
+  const R = { invoicing:renderInvoicing, collection:renderCollection, cheques:renderCheques, dashboard:renderDashboard, tbc:renderTbc, settings:renderSettings };
+  (R[page]||(()=>el.innerHTML=''))(el);
+}
+
+// ---- helpers over DB ----
+function invRow(date){ return (DB.invoices||[]).find(i=>i.date===date); }
+function colRow(date){ return (DB.collection||[]).find(c=>c.date===date); }
+function invTotal(date){ const r=invRow(date); return r?(+r.al+ +r.an+ +r.ho):0; }
+function colTotal(date){ const r=colRow(date); return r?(+r.cash+ +r.bank):0; }
+function openingBalance(){ return +(DB.config.openingBalance||0); }
+function openingDate(){ return DB.config.openingDate||'2026-08-01'; }
+
+function tbc(){
+  const od = openingDate();
+  const dates = new Set();
+  (DB.invoices||[]).forEach(i=>{ if(i.date>=od) dates.add(i.date); });
+  (DB.collection||[]).forEach(c=>{ if(c.date>=od) dates.add(c.date); });
+  const sorted=[...dates].sort();
+  let bal=openingBalance(); const rows=[];
+  sorted.forEach(d=>{ const inv=invTotal(d), col=colTotal(d); bal+=inv-col; rows.push({date:d,inv,col,bal}); });
+  return { rows, closing:bal };
+}
+
+// ---- INVOICING (Neethu / owner) ----
+function renderInvoicing(el){
+  const canEdit = ME.role==='neethu'||ME.role==='owner';
+  const list = [...(DB.invoices||[])].sort((a,b)=>b.date.localeCompare(a.date));
+  const y = new Date(Date.now()+4*3600*1000 - 86400000).toISOString().slice(0,10);
+  const yDone = !!invRow(y);
+  const late = nowClock() >= '10:00';
+  el.innerHTML = `
+    <div class="ph"><div class="pt">Invoicing</div><div class="ps">Enter each day's invoice totals — AL (day), AN (night), HO (office). Yesterday's total is due by 10:00 AM.</div></div>
+    ${canEdit&&!yDone?`<div class="banner ${late?'b-am':'b-ok'}"><span>${late?'⚠':'⏰'}</span><span>Yesterday (${y}) not entered yet${late?' — past the 10:00 AM deadline':''}.</span></div>`:''}
+    ${canEdit?`<div class="card" style="margin-bottom:1rem">
+      <div class="ct" id="inv-form-title">Add / update a day</div>
+      <div class="grid2"><div class="f"><label>Date</label><input type="date" id="inv-date" value="${todayStr()}" onchange="loadInvDate()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="inv-hint"></div></div></div>
+      <div class="grid3">
+        <div class="f"><label>AL — Day (AED)</label><input type="number" id="inv-al" min="0" step="0.01" placeholder="0"></div>
+        <div class="f"><label>AN — Night (AED)</label><input type="number" id="inv-an" min="0" step="0.01" placeholder="0"></div>
+        <div class="f"><label>HO — Office (AED)</label><input type="number" id="inv-ho" min="0" step="0.01" placeholder="0"></div>
+      </div>
+      <div class="f"><label>Note / reason (required when changing a past day)</label><input id="inv-note" placeholder="e.g. Invoice AL-123 revised 5000→4500"></div>
+      <button class="btn btn-primary" onclick="saveInvoice()">Save day</button>
+    </div>`:''}
+    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">AL</th><th class="num">AN</th><th class="num">HO</th><th class="num">Total</th><th>By</th>${canEdit?'<th></th>':''}</tr></thead><tbody>
+      ${list.length?list.map(i=>`<tr><td>${i.date}</td><td class="num">${money(i.al)}</td><td class="num">${money(i.an)}</td><td class="num">${money(i.ho)}</td><td class="num" style="font-weight:700">${money(+i.al+ +i.an+ +i.ho)}</td><td style="color:var(--ink3)">${esc(i.updatedBy||'')}</td>${canEdit?`<td><button class="btn btn-xs" onclick="editInv('${i.date}')">Edit</button></td>`:''}</tr>`).join(''):`<tr><td colspan="7" style="color:var(--ink3);text-align:center;padding:1.5rem">No invoices yet.</td></tr>`}
+    </tbody></table></div>`;
+  if(canEdit) loadInvDate();
+}
+function loadInvDate(){
+  const d=$('inv-date').value; const r=invRow(d);
+  $('inv-hint').textContent = r?`Editing existing entry (last by ${r.updatedBy||'—'})`:'New entry';
+  $('inv-al').value = r?r.al:''; $('inv-an').value=r?r.an:''; $('inv-ho').value=r?r.ho:''; $('inv-note').value='';
+}
+function editInv(date){ $('inv-date').value=date; loadInvDate(); $('inv-note').focus(); window.scrollTo(0,0); }
+async function saveInvoice(){
+  const date=$('inv-date').value, al=$('inv-al').value||0, an=$('inv-an').value||0, ho=$('inv-ho').value||0, note=$('inv-note').value.trim();
+  if(!date){ toast('Pick a date.','err'); return; }
+  const existing = invRow(date);
+  const changed = existing && (String(+existing.al)!==String(+al)||String(+existing.an)!==String(+an)||String(+existing.ho)!==String(+ho));
+  if(changed && !note){ toast('Enter a note/reason when changing a saved day.','err'); return; }
+  try{ await api('upsertInvoice',{date,al,an,ho,note,reason:note}); await sync(); toast('Saved ✅','ok'); }
+  catch(e){ toast('Failed: '+e.message,'err'); }
+}
+
+// ---- COLLECTION (Accountant / owner) ----
+function renderCollection(el){
+  const canEdit = ME.role==='accountant'||ME.role==='owner';
+  const list = [...(DB.collection||[])].sort((a,b)=>b.date.localeCompare(a.date));
+  el.innerHTML = `
+    <div class="ph"><div class="pt">Collection</div><div class="ps">Daily money collected — cash + bank — plus the day's total expense.</div></div>
+    ${canEdit?`<div class="card" style="margin-bottom:1rem">
+      <div class="ct">Add / update a day</div>
+      <div class="grid2"><div class="f"><label>Date</label><input type="date" id="col-date" value="${todayStr()}" onchange="loadColDate()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="col-hint"></div></div></div>
+      <div class="grid2">
+        <div class="f"><label>Cash collected (AED)</label><input type="number" id="col-cash" min="0" step="0.01" placeholder="0"></div>
+        <div class="f"><label>Bank credited (AED)</label><input type="number" id="col-bank" min="0" step="0.01" placeholder="0"></div>
+      </div>
+      <div class="grid2">
+        <div class="f"><label>Expense today (AED)</label><input type="number" id="col-exp" min="0" step="0.01" placeholder="0"></div>
+        <div class="f"><label>Expense note</label><input id="col-expnote" placeholder="optional"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveCollection()">Save day</button>
+    </div>`:''}
+    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">Cash</th><th class="num">Bank</th><th class="num">Collected</th><th class="num">Expense</th><th>By</th></tr></thead><tbody>
+      ${list.length?list.map(c=>`<tr><td>${c.date}</td><td class="num">${money(c.cash)}</td><td class="num">${money(c.bank)}</td><td class="num" style="font-weight:700">${money(+c.cash+ +c.bank)}</td><td class="num" style="color:var(--amber)">${money(c.expense)}</td><td style="color:var(--ink3)">${esc(c.updatedBy||'')}</td></tr>`).join(''):`<tr><td colspan="6" style="color:var(--ink3);text-align:center;padding:1.5rem">No collection entries yet.</td></tr>`}
+    </tbody></table></div>`;
+  if(canEdit) loadColDate();
+}
+function loadColDate(){
+  const d=$('col-date').value; const r=colRow(d);
+  $('col-hint').textContent = r?`Editing existing entry (last by ${r.updatedBy||'—'})`:'New entry';
+  $('col-cash').value=r?r.cash:''; $('col-bank').value=r?r.bank:''; $('col-exp').value=r?r.expense:''; $('col-expnote').value=r?(r.expenseNote||''):'';
+}
+async function saveCollection(){
+  const date=$('col-date').value, cash=$('col-cash').value||0, bank=$('col-bank').value||0, expense=$('col-exp').value||0, expenseNote=$('col-expnote').value.trim();
+  if(!date){ toast('Pick a date.','err'); return; }
+  try{ await api('upsertCollection',{date,cash,bank,expense,expenseNote}); await sync(); toast('Saved ✅','ok'); }
+  catch(e){ toast('Failed: '+e.message,'err'); }
+}
+
+// ---- CHEQUES (Accountant / owner) ----
+function renderCheques(el){
+  const canEdit = ME.role==='accountant'||ME.role==='owner';
+  const list = [...(DB.cheques||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const total = list.reduce((s,c)=>s+(+c.amount||0),0);
+  el.innerHTML = `
+    <div class="ph"><div class="pt">Cheques received</div><div class="ps">A record of cheques on hand. Not counted in collection — when a cheque clears, it appears inside the bank amount that day.</div></div>
+    ${canEdit?`<div class="card" style="margin-bottom:1rem">
+      <div class="ct">Log a cheque</div>
+      <div class="grid3">
+        <div class="f"><label>Received date</label><input type="date" id="chq-date" value="${todayStr()}"></div>
+        <div class="f"><label>Client</label><input id="chq-client" placeholder="Client name"></div>
+        <div class="f"><label>Amount (AED)</label><input type="number" id="chq-amt" min="0" step="0.01" placeholder="0"></div>
+        <div class="f"><label>Cheque no.</label><input id="chq-no" placeholder="e.g. 004521"></div>
+        <div class="f"><label>Bank</label><input id="chq-bank" placeholder="e.g. Emirates NBD"></div>
+        <div class="f"><label>Cheque date</label><input type="date" id="chq-cdate"></div>
+      </div>
+      <div class="f"><label>Note</label><input id="chq-note" placeholder="optional"></div>
+      <button class="btn btn-primary" onclick="addCheque()">Add cheque</button>
+    </div>`:''}
+    <div class="sg"><div class="sc"><div class="sl">Cheques logged</div><div class="sv">${list.length}</div></div><div class="sc"><div class="sl">Total value</div><div class="sv">${money(total)}</div><div class="ss">AED</div></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Received</th><th>Client</th><th class="num">Amount</th><th>Cheque no.</th><th>Bank</th><th>Cheque date</th><th>Note</th>${canEdit?'<th></th>':''}</tr></thead><tbody>
+      ${list.length?list.map(c=>`<tr><td>${c.date}</td><td>${esc(c.client)}</td><td class="num">${money(c.amount)}</td><td>${esc(c.chequeNo)}</td><td>${esc(c.bankName)}</td><td>${esc(c.chequeDate||'')}</td><td style="color:var(--ink3)">${esc(c.note||'')}</td>${canEdit?`<td><button class="btn btn-xs btn-danger" onclick="delCheque('${c.id}')">✕</button></td>`:''}</tr>`).join(''):`<tr><td colspan="8" style="color:var(--ink3);text-align:center;padding:1.5rem">No cheques logged.</td></tr>`}
+    </tbody></table></div>`;
+}
+async function addCheque(){
+  const data={ id:'chq'+Date.now(), date:$('chq-date').value, client:$('chq-client').value.trim(), amount:$('chq-amt').value||0, chequeNo:$('chq-no').value.trim(), bankName:$('chq-bank').value.trim(), chequeDate:$('chq-cdate').value, note:$('chq-note').value.trim(), by:ME.name };
+  if(!data.date||!data.client||!(+data.amount>0)){ toast('Enter date, client and amount.','err'); return; }
+  try{ await api('addCheque',{data}); await sync(); toast('Cheque added ✅','ok'); }
+  catch(e){ toast('Failed: '+e.message,'err'); }
+}
+async function delCheque(id){ if(!confirm('Delete this cheque record?'))return; try{ await api('deleteCheque',{id}); await sync(); toast('Deleted.'); }catch(e){ toast('Failed: '+e.message,'err'); } }
+
+// ---- DASHBOARD (owner) ----
+function renderDashboard(el){
+  const t = todayStr();
+  const invT=invTotal(t), colT=colTotal(t);
+  const cr = colRow(t); const exp = cr?+cr.expense:0;
+  const { closing } = tbc();
+  const last7 = tbc().rows.slice(-7).reverse();
+  const chqTotal = (DB.cheques||[]).reduce((s,c)=>s+(+c.amount||0),0);
+  el.innerHTML = `
+    <div class="ph"><div class="pt">Dashboard</div><div class="ps">Today (${t}) at a glance — and the running amount still to be collected.</div></div>
+    <div class="sg">
+      <div class="sc"><div class="sl">Invoiced today</div><div class="sv" style="color:var(--accent)">${money(invT)}</div><div class="ss">AL+AN+HO</div></div>
+      <div class="sc"><div class="sl">Collected today</div><div class="sv" style="color:var(--green)">${money(colT)}</div><div class="ss">cash+bank</div></div>
+      <div class="sc"><div class="sl">Expense today</div><div class="sv" style="color:var(--amber)">${money(exp)}</div></div>
+      <div class="sc"><div class="sl">Net cash today</div><div class="sv">${money(colT-exp)}</div><div class="ss">collected − expense</div></div>
+      <div class="sc"><div class="sl">To be collected</div><div class="sv" style="color:${closing>0?'var(--red)':'var(--green)'}">${money(closing)}</div><div class="ss">cumulative</div></div>
+      <div class="sc"><div class="sl">Cheques on hand</div><div class="sv">${money(chqTotal)}</div><div class="ss">AED · memo</div></div>
+    </div>
+    <div class="tbl-wrap"><div class="ct" style="padding:6px 4px 0">Last 7 recorded days</div><table><thead><tr><th>Date</th><th class="num">Invoiced</th><th class="num">Collected</th><th class="num">Balance</th></tr></thead><tbody>
+      ${last7.length?last7.map(r=>`<tr><td>${r.date}</td><td class="num">${money(r.inv)}</td><td class="num">${money(r.col)}</td><td class="num" style="font-weight:700;color:${r.bal>0?'var(--red)':'var(--green)'}">${money(r.bal)}</td></tr>`).join(''):`<tr><td colspan="4" style="color:var(--ink3);text-align:center;padding:1.5rem">No data yet.</td></tr>`}
+    </tbody></table></div>`;
+}
+
+// ---- TO BE COLLECTED (owner) ----
+function renderTbc(el){
+  const { rows, closing } = tbc();
+  const totInv = rows.reduce((s,r)=>s+r.inv,0), totCol = rows.reduce((s,r)=>s+r.col,0);
+  el.innerHTML = `
+    <div class="ph"><div class="pt">To Be Collected</div><div class="ps">Running receivable = opening balance + invoiced − collected, since ${openingDate()}.</div></div>
+    <div class="sg">
+      <div class="sc"><div class="sl">Opening (${openingDate()})</div><div class="sv">${money(openingBalance())}</div></div>
+      <div class="sc"><div class="sl">Total invoiced</div><div class="sv" style="color:var(--accent)">${money(totInv)}</div></div>
+      <div class="sc"><div class="sl">Total collected</div><div class="sv" style="color:var(--green)">${money(totCol)}</div></div>
+      <div class="sc"><div class="sl">Still to collect</div><div class="sv" style="color:${closing>0?'var(--red)':'var(--green)'}">${money(closing)}</div></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">Invoiced</th><th class="num">Collected</th><th class="num">Balance carried</th></tr></thead><tbody>
+      <tr><td style="color:var(--ink3)">${openingDate()} · opening</td><td class="num">—</td><td class="num">—</td><td class="num" style="font-weight:700">${money(openingBalance())}</td></tr>
+      ${rows.map(r=>`<tr><td>${r.date}</td><td class="num">${money(r.inv)}</td><td class="num">${money(r.col)}</td><td class="num" style="font-weight:700;color:${r.bal>0?'var(--red)':'var(--green)'}">${money(r.bal)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+// ---- SETTINGS (owner) ----
+function renderSettings(el){
+  const users = DB.users||[];
+  el.innerHTML = `
+    <div class="ph"><div class="pt">Settings</div><div class="ps">Opening balance and logins.</div></div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="ct">Opening balance (to be collected as of the start date)</div>
+      <div class="grid2">
+        <div class="f"><label>Start date</label><input type="date" id="set-odate" value="${openingDate()}"></div>
+        <div class="f"><label>Opening amount (AED)</label><input type="number" id="set-obal" step="0.01" value="${openingBalance()}"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveOpening()">Save opening</button>
+    </div>
+    <div class="card">
+      <div class="ct">Logins</div>
+      <div class="tbl-wrap" style="border:none;padding:0"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr></thead><tbody>
+        ${users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.username)}</td><td><span class="tag t-ok">${esc(u.role)}</span></td><td><button class="btn btn-xs" onclick="resetPass('${u.id}','${esc(u.name)}')">Reset password</button></td></tr>`).join('')}
+      </tbody></table></div>
+    </div>`;
+}
+async function saveOpening(){
+  try{
+    await api('setConfig',{key:'openingDate',value:$('set-odate').value});
+    await api('setConfig',{key:'openingBalance',value:$('set-obal').value||0});
+    await sync(); toast('Opening saved ✅','ok');
+  }catch(e){ toast('Failed: '+e.message,'err'); }
+}
+async function resetPass(id,name){
+  const pass = prompt('New password for '+name+':'); if(!pass) return;
+  try{ await api('saveUser',{data:{id,password:pass}}); toast('Password updated ✅','ok'); }
+  catch(e){ toast('Failed: '+e.message,'err'); }
+}
+
+// ---- boot ----
+function tick(){ $('clock').textContent = nowClock() + ' · ' + todayStr(); }
+setInterval(tick,20000); tick();
+(function boot(){
+  const savedAuth = sessionStorage.getItem('alrasa_auth');
+  if(!BACKEND_URL){ show('screen-setup'); return; }
+  if(savedAuth){ AUTH = JSON.parse(savedAuth); sync().then(()=>{ if(DB&&ME) launch(); else show('screen-login'); }).catch(()=>show('screen-login')); }
+  else show('screen-login');
+})();
+</script>
+</body>
+</html>
