@@ -82,9 +82,9 @@
   .toast.err{border-color:var(--red);color:var(--red)}
   .toast.ok{border-color:var(--green);color:var(--green)}
   @media(max-width:720px){
-    .side{position:fixed;left:0;bottom:0;top:auto;width:100%;height:auto;min-height:0;display:flex;gap:4px;overflow-x:auto;border-right:none;border-top:1px solid var(--border);background:var(--s1);z-index:30;padding:8px}
-    .nav{flex-direction:column;font-size:11px;gap:3px;padding:6px 10px;white-space:nowrap}
-    .content{padding:1rem;padding-bottom:80px}
+    .side{width:128px;padding:10px 6px}
+    .nav{font-size:12px;padding:8px 8px;gap:7px}
+    .content{padding:1rem}
     .grid2,.grid3{grid-template-columns:1fr}
   }
 </style>
@@ -154,6 +154,7 @@ function toast(msg,type=''){ const t=$('toast'); t.textContent=msg; t.className=
 function money(n){ return (Math.round((+n||0)*100)/100).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function todayStr(){ const d=new Date(Date.now()+4*3600*1000); return d.toISOString().slice(0,10); } // Dubai
+function yesterdayStr(){ const d=new Date(Date.now()+4*3600*1000-86400000); return d.toISOString().slice(0,10); }
 function nowClock(){ const d=new Date(Date.now()+4*3600*1000); return d.toISOString().slice(11,16); }
 
 async function api(action, params={}){
@@ -254,7 +255,7 @@ function renderInvoicing(el){
     ${canEdit&&!yDone?`<div class="banner ${late?'b-am':'b-ok'}"><span>${late?'⚠':'⏰'}</span><span>Yesterday (${y}) not entered yet${late?' — past the 10:00 AM deadline':''}.</span></div>`:''}
     ${canEdit?`<div class="card" style="margin-bottom:1rem">
       <div class="ct" id="inv-form-title">Add / update a day</div>
-      <div class="grid2"><div class="f"><label>Date</label><input type="date" id="inv-date" value="${todayStr()}" onchange="loadInvDate()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="inv-hint"></div></div></div>
+      <div class="grid2"><div class="f"><label>Date${ME.role==='neethu'?' (yesterday or today only)':''}</label><input type="date" id="inv-date" value="${todayStr()}" ${ME.role==='neethu'?`min="${yesterdayStr()}" max="${todayStr()}"`:''} onchange="loadInvDate()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="inv-hint"></div></div></div>
       <div class="grid3">
         <div class="f"><label>AL — Day (AED)</label><input type="number" id="inv-al" min="0" step="0.01" placeholder="0"></div>
         <div class="f"><label>AN — Night (AED)</label><input type="number" id="inv-an" min="0" step="0.01" placeholder="0"></div>
@@ -277,6 +278,7 @@ function editInv(date){ $('inv-date').value=date; loadInvDate(); $('inv-note').f
 async function saveInvoice(){
   const date=$('inv-date').value, al=$('inv-al').value||0, an=$('inv-an').value||0, ho=$('inv-ho').value||0, note=$('inv-note').value.trim();
   if(!date){ toast('Pick a date.','err'); return; }
+  if(ME.role==='neethu' && (date<yesterdayStr()||date>todayStr())){ toast('You can only enter yesterday or today.','err'); return; }
   const existing = invRow(date);
   const changed = existing && (String(+existing.al)!==String(+al)||String(+existing.an)!==String(+an)||String(+existing.ho)!==String(+ho));
   if(changed && !note){ toast('Enter a note/reason when changing a saved day.','err'); return; }
