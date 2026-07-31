@@ -81,6 +81,18 @@
   .toast.show{opacity:1}
   .toast.err{border-color:var(--red);color:var(--red)}
   .toast.ok{border-color:var(--green);color:var(--green)}
+  /* busy indicators — the Sheets backend can take a couple of seconds */
+  #progress{position:fixed;top:0;left:0;height:3px;width:100%;z-index:100;pointer-events:none;opacity:0;transition:opacity .15s;overflow:hidden}
+  #progress.show{opacity:1}
+  #progress::after{content:'';position:absolute;top:0;left:0;height:100%;width:40%;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:slide 1.1s ease-in-out infinite}
+  @keyframes slide{0%{transform:translateX(-110%)}100%{transform:translateX(360%)}}
+  .overlay{position:fixed;inset:0;background:rgba(14,17,22,.82);display:none;align-items:center;justify-content:center;z-index:90}
+  .overlay.show{display:flex}
+  .spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .overlay-txt{color:var(--ink2);font-size:13px;margin-top:14px;text-align:center}
+  .overlay-sub{color:var(--ink3);font-size:11px;margin-top:5px;text-align:center}
+  .btn[disabled]{opacity:.55;cursor:not-allowed}
   @media(max-width:720px){
     .side{width:128px;padding:10px 6px}
     .nav{font-size:12px;padding:8px 8px;gap:7px}
@@ -112,7 +124,7 @@
     <div class="card">
       <div class="f"><label>Username</label><input id="l-user" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <div class="f"><label>Password</label><input id="l-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
-      <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Sign In</button>
+      <button class="btn btn-primary" style="width:100%" id="login-btn" onclick="doLogin()">Sign In</button>
       <p class="err" id="l-err"></p>
       <p style="font-size:11px;color:var(--ink3);margin-top:14px;text-align:center;cursor:pointer" onclick="resetBackend()">⚙ Reconfigure</p>
     </div>
@@ -139,6 +151,14 @@
   </div>
 </div>
 
+<div id="progress"></div>
+<div class="overlay" id="overlay">
+  <div>
+    <div class="spinner"></div>
+    <div class="overlay-txt" id="overlay-txt">Loading…</div>
+    <div class="overlay-sub" id="overlay-sub"></div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -180,16 +200,46 @@ function entryOpen(){ return !rulesLive() || todayStr()>=openingDate(); }
 function notYetBanner(){ return `<div class="banner b-am"><span>📅</span><span>Data entry begins on <strong>${openingDate()}</strong>. Everything before that date is covered by the opening balance.</span></div>`; }
 function nowClock(){ const d=new Date(Date.now()+4*3600*1000); return d.toISOString().slice(11,16); }
 
+// Busy indicators. Any request shows the thin top bar; slow/blocking steps
+// (login, first load) also show the full overlay.
+let busy=0, writing=false;
+function setBusy(on){
+  busy += on?1:-1; if(busy<0) busy=0;
+  const p=$('progress'); if(p) p.classList.toggle('show', busy>0);
+}
+let overlayTimer=null;
+function overlay(show,txt,sub){
+  const o=$('overlay'); if(!o) return;
+  if(txt!==undefined) $('overlay-txt').textContent=txt;
+  clearInterval(overlayTimer);
+  if(show){
+    const base = sub||'Please wait about 3 seconds…';
+    const start = Date.now();
+    $('overlay-sub').textContent = base;
+    // Keep the user informed rather than leaving a silent spinner.
+    overlayTimer = setInterval(()=>{
+      const s = Math.round((Date.now()-start)/1000);
+      $('overlay-sub').textContent = s<4 ? base
+        : (s<10 ? `Still working… ${s}s` : `Taking longer than usual… ${s}s — check your connection.`);
+    }, 500);
+  } else $('overlay-sub').textContent='';
+  o.classList.toggle('show', !!show);
+}
+
 async function api(action, params={}){
   if(!BACKEND_URL) throw new Error('No backend configured');
   const body = new URLSearchParams();
   body.append('action', action);
   if(AUTH){ body.append('username', AUTH.username); body.append('password', AUTH.password); }
   for(const k in params){ const v=params[k]; body.append(k, typeof v==='object'?JSON.stringify(v):v); }
-  const res = await fetch(BACKEND_URL, { method:'POST', body });
-  const json = await res.json();
-  if(json.error) throw new Error(json.error);
-  return json;
+  const isWrite=/^(upsert|add|delete|set)/.test(action);
+  setBusy(true); if(isWrite) writing=true;
+  try{
+    const res = await fetch(BACKEND_URL, { method:'POST', body });
+    const json = await res.json();
+    if(json.error) throw new Error(json.error);
+    return json;
+  } finally { setBusy(false); if(isWrite) writing=false; }
 }
 
 // ---- setup / auth ----
@@ -205,14 +255,19 @@ async function doLogin(){
   const username = $('l-user').value.trim(), password = $('l-pass').value;
   const err = $('l-err'); err.style.display='none';
   if(!username||!password){ err.textContent='Enter username and password.'; err.style.display='block'; return; }
+  const btn = $('login-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  overlay(true, 'Signing in…', 'Please wait about 3 seconds…');
   try{
     const r = await api('login', { username, password });
     if(!r.ok){ err.textContent=r.error||'Login failed.'; err.style.display='block'; return; }
     AUTH = { username, password };
     sessionStorage.setItem('alrasa_auth', JSON.stringify(AUTH));
+    overlay(true, 'Loading your data…', 'Almost there.');
     await sync();
     launch();
   }catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
+  finally{ btn.disabled=false; btn.textContent='Sign In'; overlay(false); }
 }
 function logout(){ AUTH=null; DB=null; ME=null; sessionStorage.removeItem('alrasa_auth'); show('screen-login'); $('l-pass').value=''; }
 
@@ -311,6 +366,7 @@ function loadInvDate(){
 }
 function editInv(date){ $('inv-date').value=date; loadInvDate(); $('inv-note').focus(); window.scrollTo(0,0); }
 async function saveInvoice(){
+  if(writing) return;
   const date=$('inv-date').value, al=$('inv-al').value||0, an=$('inv-an').value||0, ho=$('inv-ho').value||0, note=$('inv-note').value.trim();
   if(!date){ toast('Pick a date.','err'); return; }
   if(ME.role==='neethu' && rulesLive()){
@@ -358,6 +414,7 @@ function loadColDate(){
   $('col-cash').value=r?r.cash:''; $('col-bank').value=r?r.bank:''; $('col-exp').value=r?r.expense:''; $('col-expnote').value=r?(r.expenseNote||''):'';
 }
 async function saveCollection(){
+  if(writing) return;
   const date=$('col-date').value, cash=$('col-cash').value||0, bank=$('col-bank').value||0, expense=$('col-exp').value||0, expenseNote=$('col-expnote').value.trim();
   if(!date){ toast('Pick a date.','err'); return; }
   if(canCollect() && rulesLive()){
@@ -396,6 +453,7 @@ function renderCheques(el){
     </tbody></table></div>`;
 }
 async function addCheque(){
+  if(writing) return;
   const data={ id:'chq'+Date.now(), date:$('chq-date').value, client:$('chq-client').value.trim(), amount:$('chq-amt').value||0, chequeNo:$('chq-no').value.trim(), bankName:$('chq-bank').value.trim(), chequeDate:$('chq-cdate').value, note:$('chq-note').value.trim(), by:ME.name };
   if(!data.date||!data.client||!(+data.amount>0)){ toast('Enter date, client and amount.','err'); return; }
   try{ await api('addCheque',{data}); await sync(); toast('Cheque added ✅','ok'); }
@@ -488,6 +546,7 @@ function renderMySales(el){
     </tbody></table></div>`;
 }
 async function saveMySales(){
+  if(writing) return;
   const quotation=$('sal-q').value||0, converted=$('sal-c').value||0;
   if(+quotation<0||+converted<0){ toast('Amounts cannot be negative.','err'); return; }
   try{ await api('upsertSales',{date:todayStr(),quotation,converted}); await sync(); toast('Saved ✅','ok'); }
@@ -576,7 +635,15 @@ setInterval(tick,20000); tick();
 (function boot(){
   const savedAuth = sessionStorage.getItem('alrasa_auth');
   if(!BACKEND_URL){ show('screen-setup'); return; }
-  if(savedAuth){ AUTH = JSON.parse(savedAuth); sync().then(()=>{ if(DB&&ME) launch(); else show('screen-login'); }).catch(()=>show('screen-login')); }
+  if(savedAuth){
+    AUTH = JSON.parse(savedAuth);
+    show('screen-login');
+    overlay(true,'Loading…','Please wait about 3 seconds…');
+    sync()
+      .then(()=>{ if(DB&&ME) launch(); else show('screen-login'); })
+      .catch(()=>show('screen-login'))
+      .finally(()=>overlay(false));
+  }
   else show('screen-login');
 })();
 </script>
