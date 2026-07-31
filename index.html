@@ -155,11 +155,28 @@ function money(n){ return (Math.round((+n||0)*100)/100).toLocaleString('en-US',{
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function todayStr(){ const d=new Date(Date.now()+4*3600*1000); return d.toISOString().slice(0,10); } // Dubai
 function yesterdayStr(){ const d=new Date(Date.now()+4*3600*1000-86400000); return d.toISOString().slice(0,10); }
-// Data entry never goes before the opening date (everything prior is in the
-// opening balance). Neethu is additionally limited to yesterday/today.
-function invMinDate(){ const y=yesterdayStr(), o=openingDate(); return y>o?y:o; }
-// Data entry hasn't started yet if today is still before the opening date.
-function entryOpen(){ return todayStr()>=openingDate(); }
+function nowMins(){ const s=nowClock(); return +s.slice(0,2)*60 + +s.slice(3); }
+
+// Live entry rules begin on this date; before it everything is open so the
+// app can be trialled. Must match ENFORCE_FROM in Code.gs.
+const ENFORCE_FROM='2026-08-01';
+const INVOICE_CUTOFF=10*60, COLLECTION_CUTOFF=14*60;
+function rulesLive(){ return todayStr()>=ENFORCE_FROM; }
+function cutoffLabel(m){ const h=Math.floor(m/60), mm=m%60; return ((h%12)||12)+':'+(mm<10?'0'+mm:mm)+(h<12?' AM':' PM'); }
+// Earliest date still editable: yesterday until the cutoff, else today.
+function windowMin(cutoff){
+  if(!rulesLive()) return '';
+  return nowMins()<cutoff ? yesterdayStr() : todayStr();
+}
+function windowNote(cutoff,label){
+  if(!rulesLive()) return `Open entry until ${ENFORCE_FROM} — you can add any date while testing.`;
+  return nowMins()<cutoff
+    ? `You can still enter or correct <strong>yesterday (${yesterdayStr()})</strong> until <strong>${cutoffLabel(cutoff)}</strong> today.`
+    : `Yesterday's ${label} closed at ${cutoffLabel(cutoff)}. Only <strong>today (${todayStr()})</strong> can be entered now.`;
+}
+// Data entry hasn't started yet if today is before the opening date — except
+// during the trial period, when everything stays open for testing.
+function entryOpen(){ return !rulesLive() || todayStr()>=openingDate(); }
 function notYetBanner(){ return `<div class="banner b-am"><span>📅</span><span>Data entry begins on <strong>${openingDate()}</strong>. Everything before that date is covered by the opening balance.</span></div>`; }
 function nowClock(){ const d=new Date(Date.now()+4*3600*1000); return d.toISOString().slice(11,16); }
 
@@ -264,7 +281,8 @@ function renderInvoicing(el){
     ${(canEdit||canDelete)&&entryOpen()&&!yDone&&y>=openingDate()?`<div class="banner ${late?'b-am':'b-ok'}"><span>${late?'⚠':'⏰'}</span><span>Yesterday (${y}) not entered yet${late?' — past the 10:00 AM deadline':''}.</span></div>`:''}
     ${canEdit&&!(ME.role==='neethu'&&!entryOpen())?`<div class="card" style="margin-bottom:1rem">
       <div class="ct" id="inv-form-title">Add / update a day</div>
-      <div class="grid2"><div class="f"><label>Date${ME.role==='neethu'?' (yesterday or today only)':''}</label><input type="date" id="inv-date" value="${todayStr()}" ${ME.role==='neethu'?`min="${invMinDate()}" max="${todayStr()}"`:''} onchange="loadInvDate()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="inv-hint"></div></div></div>
+      <div style="font-size:12px;color:${rulesLive()?'var(--ink2)':'var(--amber)'};margin-bottom:10px">${windowNote(INVOICE_CUTOFF,'invoicing')}</div>
+      <div class="grid2"><div class="f"><label>Date</label><input type="date" id="inv-date" value="${todayStr()}" ${ME.role==='neethu'?`min="${windowMin(INVOICE_CUTOFF)}" max="${todayStr()}"`:''} onchange="loadInvDate()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="inv-hint"></div></div></div>
       <div class="grid3">
         <div class="f"><label>AL — Day (AED)</label><input type="number" id="inv-al" min="0" step="0.01" placeholder="0"></div>
         <div class="f"><label>AN — Night (AED)</label><input type="number" id="inv-an" min="0" step="0.01" placeholder="0"></div>
@@ -288,9 +306,10 @@ function editInv(date){ $('inv-date').value=date; loadInvDate(); $('inv-note').f
 async function saveInvoice(){
   const date=$('inv-date').value, al=$('inv-al').value||0, an=$('inv-an').value||0, ho=$('inv-ho').value||0, note=$('inv-note').value.trim();
   if(!date){ toast('Pick a date.','err'); return; }
-  if(ME.role==='neethu'){
+  if(ME.role==='neethu' && rulesLive()){
     if(date<openingDate()){ toast('Entries start from '+openingDate()+'.','err'); return; }
-    if(date<invMinDate()||date>todayStr()){ toast('You can only enter yesterday or today.','err'); return; }
+    const mn=windowMin(INVOICE_CUTOFF);
+    if(date<mn||date>todayStr()){ toast(nowMins()<INVOICE_CUTOFF?`Only ${yesterdayStr()} or ${todayStr()} can be entered now.`:`Yesterday closed at ${cutoffLabel(INVOICE_CUTOFF)} — only today can be entered.`,'err'); return; }
   }
   const existing = invRow(date);
   const changed = existing && (String(+existing.al)!==String(+al)||String(+existing.an)!==String(+an)||String(+existing.ho)!==String(+ho));
@@ -308,7 +327,8 @@ function renderCollection(el){
     ${canEdit&&ME.role==='accountant'&&!entryOpen()?notYetBanner():''}
     ${canEdit&&!(ME.role==='accountant'&&!entryOpen())?`<div class="card" style="margin-bottom:1rem">
       <div class="ct">Add / update a day</div>
-      <div class="grid2"><div class="f"><label>Date${ME.role==='accountant'?' (from '+openingDate()+')':''}</label><input type="date" id="col-date" value="${todayStr()}" ${ME.role==='accountant'?`min="${openingDate()}" max="${todayStr()}"`:''} onchange="loadColDate()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="col-hint"></div></div></div>
+      <div style="font-size:12px;color:${rulesLive()?'var(--ink2)':'var(--amber)'};margin-bottom:10px">${windowNote(COLLECTION_CUTOFF,'collection')}</div>
+      <div class="grid2"><div class="f"><label>Date</label><input type="date" id="col-date" value="${todayStr()}" ${ME.role==='accountant'?`min="${windowMin(COLLECTION_CUTOFF)}" max="${todayStr()}"`:''} onchange="loadColDate()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="col-hint"></div></div></div>
       <div class="grid2">
         <div class="f"><label>Cash collected (AED)</label><input type="number" id="col-cash" min="0" step="0.01" placeholder="0"></div>
         <div class="f"><label>Bank credited (AED)</label><input type="number" id="col-bank" min="0" step="0.01" placeholder="0"></div>
@@ -333,9 +353,10 @@ function loadColDate(){
 async function saveCollection(){
   const date=$('col-date').value, cash=$('col-cash').value||0, bank=$('col-bank').value||0, expense=$('col-exp').value||0, expenseNote=$('col-expnote').value.trim();
   if(!date){ toast('Pick a date.','err'); return; }
-  if(ME.role==='accountant'){
+  if(ME.role==='accountant' && rulesLive()){
     if(date<openingDate()){ toast('Entries start from '+openingDate()+'.','err'); return; }
-    if(date>todayStr()){ toast('You cannot enter a future date.','err'); return; }
+    const mn=windowMin(COLLECTION_CUTOFF);
+    if(date<mn||date>todayStr()){ toast(nowMins()<COLLECTION_CUTOFF?`Only ${yesterdayStr()} or ${todayStr()} can be entered now.`:`Yesterday closed at ${cutoffLabel(COLLECTION_CUTOFF)} — only today can be entered.`,'err'); return; }
   }
   try{ await api('upsertCollection',{date,cash,bank,expense,expenseNote}); await sync(); toast('Saved ✅','ok'); }
   catch(e){ toast('Failed: '+e.message,'err'); }
@@ -352,7 +373,7 @@ function renderCheques(el){
     ${canEdit?`<div class="card" style="margin-bottom:1rem">
       <div class="ct">Log a cheque</div>
       <div class="grid3">
-        <div class="f"><label>Received date</label><input type="date" id="chq-date" value="${todayStr()}" ${ME.role==='accountant'?`min="${openingDate()}" max="${todayStr()}"`:''}></div>
+        <div class="f"><label>Received date</label><input type="date" id="chq-date" value="${todayStr()}" ${ME.role==='accountant'&&rulesLive()?`min="${openingDate()}" max="${todayStr()}"`:''}></div>
         <div class="f"><label>Client</label><input id="chq-client" placeholder="Client name"></div>
         <div class="f"><label>Amount (AED)</label><input type="number" id="chq-amt" min="0" step="0.01" placeholder="0"></div>
         <div class="f"><label>Cheque no.</label><input id="chq-no" placeholder="e.g. 004521"></div>
