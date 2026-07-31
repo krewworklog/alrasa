@@ -162,7 +162,17 @@
 <div class="toast" id="toast"></div>
 
 <script>
-let BACKEND_URL = localStorage.getItem('alrasa_url') || '';
+// Baked in so staff never see the setup screen. A saved value (from the
+// ⚙ Reconfigure link) takes priority, e.g. if the backend is ever redeployed.
+const DEFAULT_BACKEND='https://script.google.com/macros/s/AKfycbx8CLQQWLKGpRI969XC2DHxHuib32nFOnlS6yrl-jJkQHGoJ4Cp6vxzzwSwcCy46As/exec';
+function validBackend(u){ return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(String(u||'').trim()); }
+// Ignore anything saved that isn't a proper /exec URL, so a stale or mistyped
+// value can never shadow the working default.
+let BACKEND_URL = (function(){
+  const saved = localStorage.getItem('alrasa_url');
+  if(saved && !validBackend(saved)) localStorage.removeItem('alrasa_url');
+  return validBackend(saved) ? saved.trim() : DEFAULT_BACKEND;
+})();
 let AUTH = null;           // {username, password}
 let DB = null;             // full dataset
 let ME = null;             // {name, username, role}
@@ -246,11 +256,16 @@ async function api(action, params={}){
 function saveBackend(){
   const url = $('setup-url').value.trim();
   const err = $('setup-err'); err.style.display='none';
-  if(!url.startsWith('https://script.google.com')){ err.textContent='Paste a valid Apps Script URL ending in /exec.'; err.style.display='block'; return; }
+  if(!validBackend(url)){ err.textContent='Paste a valid Apps Script Web App URL ending in /exec.'; err.style.display='block'; return; }
   BACKEND_URL = url; localStorage.setItem('alrasa_url', url);
   show('screen-login');
 }
-function resetBackend(){ if(confirm('Reconfigure the backend URL?')){ localStorage.removeItem('alrasa_url'); location.reload(); } }
+function resetBackend(){
+  if(!confirm('Reconfigure the server URL? Only do this if you have been given a new one.')) return;
+  localStorage.removeItem('alrasa_url');
+  BACKEND_URL='';                    // force the setup screen
+  show('screen-setup');
+}
 async function doLogin(){
   const username = $('l-user').value.trim(), password = $('l-pass').value;
   const err = $('l-err'); err.style.display='none';
