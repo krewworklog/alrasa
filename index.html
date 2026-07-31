@@ -208,7 +208,8 @@ async function sync(){
 const NAV = {
   neethu:    [['invoicing','🧾 Invoicing']],
   accountant:[['collection','💵 Collection'],['cheques','🏦 Cheques']],
-  owner:     [['dashboard','📊 Dashboard'],['tbc','📈 To Be Collected'],['invoicing','🧾 Invoicing'],['collection','💵 Collection'],['cheques','🏦 Cheques'],['settings','⚙ Settings']]
+  sales:     [['mysales','💼 My Sales']],
+  owner:     [['dashboard','📊 Dashboard'],['tbc','📈 To Be Collected'],['salesteam','💼 Sales Team'],['invoicing','🧾 Invoicing'],['collection','💵 Collection'],['cheques','🏦 Cheques'],['settings','⚙ Settings']]
 };
 function launch(){
   show('screen-app');
@@ -226,7 +227,7 @@ function go(page){
 }
 function renderPage(page){
   const el = $('content');
-  const R = { invoicing:renderInvoicing, collection:renderCollection, cheques:renderCheques, dashboard:renderDashboard, tbc:renderTbc, settings:renderSettings };
+  const R = { invoicing:renderInvoicing, collection:renderCollection, cheques:renderCheques, dashboard:renderDashboard, tbc:renderTbc, settings:renderSettings, mysales:renderMySales, salesteam:renderSalesTeam };
   (R[page]||(()=>el.innerHTML=''))(el);
 }
 
@@ -420,6 +421,91 @@ function renderTbc(el){
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">Invoiced</th><th class="num">Collected</th><th class="num">Balance carried</th></tr></thead><tbody>
       <tr><td style="color:var(--ink3)">${openingDate()} · opening</td><td class="num">—</td><td class="num">—</td><td class="num" style="font-weight:700">${money(openingBalance())}</td></tr>
       ${rows.map(r=>`<tr><td>${r.date}</td><td class="num">${money(r.inv)}</td><td class="num">${money(r.col)}</td><td class="num" style="font-weight:700;color:${r.bal>0?'var(--red)':'var(--green)'}">${money(r.bal)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+// ---- MY SALES (sales role) ----
+function renderMySales(el){
+  const t = todayStr();
+  const mine = [...(DB.sales||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const today = mine.find(s=>s.date===t);
+  const totQ = mine.reduce((s,r)=>s+(+r.quotation||0),0);
+  const totC = mine.reduce((s,r)=>s+(+r.converted||0),0);
+  const totR = mine.filter(r=>r.received).reduce((s,r)=>s+(+r.converted||0),0);
+  el.innerHTML = `
+    <div class="ph"><div class="pt">My Sales</div><div class="ps">Enter today's quotation and converted amounts. Amounts lock at the end of the day — after that only the “received” tick can be changed.</div></div>
+    <div class="sg">
+      <div class="sc"><div class="sl">Quoted (all time)</div><div class="sv" style="color:var(--accent)">${money(totQ)}</div></div>
+      <div class="sc"><div class="sl">Converted</div><div class="sv" style="color:var(--green)">${money(totC)}</div></div>
+      <div class="sc"><div class="sl">Money received</div><div class="sv">${money(totR)}</div><div class="ss">ticked</div></div>
+      <div class="sc"><div class="sl">Awaiting payment</div><div class="sv" style="color:var(--amber)">${money(totC-totR)}</div></div>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="ct">Today — ${t}</div>
+      <div class="grid2">
+        <div class="f"><label>Quotation amount made (AED)</label><input type="number" id="sal-q" min="0" step="0.01" placeholder="0" value="${today?today.quotation:''}"></div>
+        <div class="f"><label>Sales converted (AED)</label><input type="number" id="sal-c" min="0" step="0.01" placeholder="0" value="${today?today.converted:''}"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveMySales()">${today?'Update today':'Save today'}</button>
+      ${today?`<span style="font-size:12px;color:var(--ink3);margin-left:10px">last saved ${esc(today.updatedAt||'')}</span>`:''}
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">Quotation</th><th class="num">Converted</th><th>Money received</th><th>Ticked on</th></tr></thead><tbody>
+      ${mine.length?mine.map(s=>`<tr>
+        <td>${s.date}${s.date===t?' <span class="tag t-ok">today</span>':''}</td>
+        <td class="num">${money(s.quotation)}</td>
+        <td class="num" style="font-weight:700">${money(s.converted)}</td>
+        <td><label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0"><input type="checkbox" style="width:17px;height:17px;accent-color:var(--green);cursor:pointer" ${s.received?'checked':''} onchange="tickReceived('${s.id}',this.checked)"><span style="font-size:12px;color:${s.received?'var(--green)':'var(--ink3)'}">${s.received?'Received':'Not yet'}</span></label></td>
+        <td style="color:var(--ink3);font-size:12px">${esc(s.receivedAt||'—')}</td>
+      </tr>`).join(''):`<tr><td colspan="5" style="color:var(--ink3);text-align:center;padding:1.5rem">No entries yet.</td></tr>`}
+    </tbody></table></div>`;
+}
+async function saveMySales(){
+  const quotation=$('sal-q').value||0, converted=$('sal-c').value||0;
+  if(+quotation<0||+converted<0){ toast('Amounts cannot be negative.','err'); return; }
+  try{ await api('upsertSales',{date:todayStr(),quotation,converted}); await sync(); toast('Saved ✅','ok'); }
+  catch(e){ toast('Failed: '+e.message,'err'); }
+}
+async function tickReceived(id,val){
+  try{ await api('setSalesReceived',{id,value:val}); await sync(); toast(val?'Marked received ✅':'Unmarked','ok'); }
+  catch(e){ toast('Failed: '+e.message,'err'); await sync(); }
+}
+
+// ---- SALES TEAM (owner) ----
+function renderSalesTeam(el){
+  const all = DB.sales||[];
+  const month = (el.dataset.month)|| todayStr().slice(0,7);
+  const rows = all.filter(s=>String(s.date).slice(0,7)===month);
+  const byPerson = {};
+  rows.forEach(s=>{
+    const k=s.userName||s.userId;
+    byPerson[k] = byPerson[k]||{q:0,c:0,r:0,days:0};
+    byPerson[k].q+=+s.quotation||0; byPerson[k].c+=+s.converted||0;
+    if(s.received) byPerson[k].r+=+s.converted||0;
+    byPerson[k].days++;
+  });
+  const people = Object.entries(byPerson).sort((a,b)=>b[1].c-a[1].c);
+  const totQ=rows.reduce((s,r)=>s+(+r.quotation||0),0);
+  const totC=rows.reduce((s,r)=>s+(+r.converted||0),0);
+  const totR=rows.filter(r=>r.received).reduce((s,r)=>s+(+r.converted||0),0);
+  el.innerHTML = `
+    <div class="ph"><div class="pt">Sales Team</div><div class="ps">Quotations, conversions and money received by each sales person.</div></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:1rem">
+      <label style="margin:0">Month</label><input type="month" id="st-month" value="${month}" style="width:auto" onchange="document.getElementById('content').dataset.month=this.value;renderSalesTeam(document.getElementById('content'))">
+    </div>
+    <div class="sg">
+      <div class="sc"><div class="sl">Quoted</div><div class="sv" style="color:var(--accent)">${money(totQ)}</div></div>
+      <div class="sc"><div class="sl">Converted</div><div class="sv" style="color:var(--green)">${money(totC)}</div></div>
+      <div class="sc"><div class="sl">Received</div><div class="sv">${money(totR)}</div></div>
+      <div class="sc"><div class="sl">Awaiting payment</div><div class="sv" style="color:var(--amber)">${money(totC-totR)}</div></div>
+      <div class="sc"><div class="sl">Conversion</div><div class="sv">${totQ>0?Math.round(totC/totQ*100):0}%</div><div class="ss">converted ÷ quoted</div></div>
+    </div>
+    <div class="tbl-wrap" style="margin-bottom:1rem"><div class="ct" style="padding:6px 4px 0">By person — ${month}</div>
+      <table><thead><tr><th>Sales person</th><th class="num">Quoted</th><th class="num">Converted</th><th class="num">Received</th><th class="num">Pending</th><th class="num">Conv %</th></tr></thead><tbody>
+      ${people.length?people.map(([n,v])=>`<tr><td style="font-weight:600">${esc(n)}</td><td class="num">${money(v.q)}</td><td class="num" style="font-weight:700">${money(v.c)}</td><td class="num" style="color:var(--green)">${money(v.r)}</td><td class="num" style="color:var(--amber)">${money(v.c-v.r)}</td><td class="num">${v.q>0?Math.round(v.c/v.q*100):0}%</td></tr>`).join(''):`<tr><td colspan="6" style="color:var(--ink3);text-align:center;padding:1.5rem">No sales entries this month.</td></tr>`}
+    </tbody></table></div>
+    <div class="tbl-wrap"><div class="ct" style="padding:6px 4px 0">Daily entries</div>
+      <table><thead><tr><th>Date</th><th>Sales person</th><th class="num">Quotation</th><th class="num">Converted</th><th>Received</th></tr></thead><tbody>
+      ${rows.length?[...rows].sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(s=>`<tr><td>${s.date}</td><td>${esc(s.userName||'')}</td><td class="num">${money(s.quotation)}</td><td class="num">${money(s.converted)}</td><td><span class="tag ${s.received?'t-ok':'t-am'}">${s.received?'✓ Received':'Pending'}</span></td></tr>`).join(''):`<tr><td colspan="5" style="color:var(--ink3);text-align:center;padding:1.5rem">No entries.</td></tr>`}
     </tbody></table></div>`;
 }
 
