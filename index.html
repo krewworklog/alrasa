@@ -251,7 +251,8 @@ function tbc(){
 
 // ---- INVOICING (Neethu / owner) ----
 function renderInvoicing(el){
-  const canEdit = ME.role==='neethu'||ME.role==='owner';
+  const canEdit = ME.role==='neethu';           // owner is view-only here
+  const canDelete = ME.role==='owner';          // owner can remove a wrong day
   const list = [...(DB.invoices||[])].sort((a,b)=>b.date.localeCompare(a.date));
   const y = new Date(Date.now()+4*3600*1000 - 86400000).toISOString().slice(0,10);
   const yDone = !!invRow(y);
@@ -259,7 +260,7 @@ function renderInvoicing(el){
   el.innerHTML = `
     <div class="ph"><div class="pt">Invoicing</div><div class="ps">Enter each day's invoice totals — AL (day), AN (night), HO (office). Yesterday's total is due by 10:00 AM.</div></div>
     ${canEdit&&ME.role==='neethu'&&!entryOpen()?notYetBanner():''}
-    ${canEdit&&entryOpen()&&!yDone&&y>=openingDate()?`<div class="banner ${late?'b-am':'b-ok'}"><span>${late?'⚠':'⏰'}</span><span>Yesterday (${y}) not entered yet${late?' — past the 10:00 AM deadline':''}.</span></div>`:''}
+    ${(canEdit||canDelete)&&entryOpen()&&!yDone&&y>=openingDate()?`<div class="banner ${late?'b-am':'b-ok'}"><span>${late?'⚠':'⏰'}</span><span>Yesterday (${y}) not entered yet${late?' — past the 10:00 AM deadline':''}.</span></div>`:''}
     ${canEdit&&!(ME.role==='neethu'&&!entryOpen())?`<div class="card" style="margin-bottom:1rem">
       <div class="ct" id="inv-form-title">Add / update a day</div>
       <div class="grid2"><div class="f"><label>Date${ME.role==='neethu'?' (yesterday or today only)':''}</label><input type="date" id="inv-date" value="${todayStr()}" ${ME.role==='neethu'?`min="${invMinDate()}" max="${todayStr()}"`:''} onchange="loadInvDate()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="inv-hint"></div></div></div>
@@ -271,8 +272,8 @@ function renderInvoicing(el){
       <div class="f"><label>Note / reason (required when changing a past day)</label><input id="inv-note" placeholder="e.g. Invoice AL-123 revised 5000→4500"></div>
       <button class="btn btn-primary" onclick="saveInvoice()">Save day</button>
     </div>`:''}
-    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">AL</th><th class="num">AN</th><th class="num">HO</th><th class="num">Total</th><th>By</th>${canEdit?'<th></th>':''}</tr></thead><tbody>
-      ${list.length?list.map(i=>`<tr><td>${i.date}</td><td class="num">${money(i.al)}</td><td class="num">${money(i.an)}</td><td class="num">${money(i.ho)}</td><td class="num" style="font-weight:700">${money(+i.al+ +i.an+ +i.ho)}</td><td style="color:var(--ink3)">${esc(i.updatedBy||'')}</td>${canEdit?`<td style="white-space:nowrap"><button class="btn btn-xs" onclick="editInv('${i.date}')">Edit</button>${ME.role==='owner'?` <button class="btn btn-xs btn-danger" onclick="delInv('${i.id}','${i.date}')">✕</button>`:''}</td>`:''}</tr>`).join(''):`<tr><td colspan="7" style="color:var(--ink3);text-align:center;padding:1.5rem">No invoices yet.</td></tr>`}
+    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">AL</th><th class="num">AN</th><th class="num">HO</th><th class="num">Total</th><th>By</th>${canEdit||canDelete?'<th></th>':''}</tr></thead><tbody>
+      ${list.length?list.map(i=>`<tr><td>${i.date}</td><td class="num">${money(i.al)}</td><td class="num">${money(i.an)}</td><td class="num">${money(i.ho)}</td><td class="num" style="font-weight:700">${money(+i.al+ +i.an+ +i.ho)}</td><td style="color:var(--ink3)">${esc(i.updatedBy||'')}</td>${canEdit||canDelete?`<td style="white-space:nowrap">${canEdit?`<button class="btn btn-xs" onclick="editInv('${i.date}')">Edit</button>`:''}${canDelete?` <button class="btn btn-xs btn-danger" onclick="delInv('${i.id}','${i.date}')">✕</button>`:''}</td>`:''}</tr>`).join(''):`<tr><td colspan="7" style="color:var(--ink3);text-align:center;padding:1.5rem">No invoices yet.</td></tr>`}
     </tbody></table></div>`;
   if(canEdit) loadInvDate();
 }
@@ -299,7 +300,7 @@ async function saveInvoice(){
 
 // ---- COLLECTION (Accountant / owner) ----
 function renderCollection(el){
-  const canEdit = ME.role==='accountant'||ME.role==='owner';
+  const canEdit = ME.role==='accountant';       // owner is view-only here
   const list = [...(DB.collection||[])].sort((a,b)=>b.date.localeCompare(a.date));
   el.innerHTML = `
     <div class="ph"><div class="pt">Collection</div><div class="ps">Daily money collected — cash + bank — plus the day's total expense.</div></div>
@@ -341,7 +342,8 @@ async function saveCollection(){
 
 // ---- CHEQUES (Accountant / owner) ----
 function renderCheques(el){
-  const canEdit = ME.role==='accountant'||ME.role==='owner';
+  const canEdit = ME.role==='accountant';       // owner is view-only here
+  const canDelete = ME.role==='accountant'||ME.role==='owner';
   const list = [...(DB.cheques||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   const total = list.reduce((s,c)=>s+(+c.amount||0),0);
   el.innerHTML = `
@@ -360,8 +362,8 @@ function renderCheques(el){
       <button class="btn btn-primary" onclick="addCheque()">Add cheque</button>
     </div>`:''}
     <div class="sg"><div class="sc"><div class="sl">Cheques logged</div><div class="sv">${list.length}</div></div><div class="sc"><div class="sl">Total value</div><div class="sv">${money(total)}</div><div class="ss">AED</div></div></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Received</th><th>Client</th><th class="num">Amount</th><th>Cheque no.</th><th>Bank</th><th>Cheque date</th><th>Note</th>${canEdit?'<th></th>':''}</tr></thead><tbody>
-      ${list.length?list.map(c=>`<tr><td>${c.date}</td><td>${esc(c.client)}</td><td class="num">${money(c.amount)}</td><td>${esc(c.chequeNo)}</td><td>${esc(c.bankName)}</td><td>${esc(c.chequeDate||'')}</td><td style="color:var(--ink3)">${esc(c.note||'')}</td>${canEdit?`<td><button class="btn btn-xs btn-danger" onclick="delCheque('${c.id}')">✕</button></td>`:''}</tr>`).join(''):`<tr><td colspan="8" style="color:var(--ink3);text-align:center;padding:1.5rem">No cheques logged.</td></tr>`}
+    <div class="tbl-wrap"><table><thead><tr><th>Received</th><th>Client</th><th class="num">Amount</th><th>Cheque no.</th><th>Bank</th><th>Cheque date</th><th>Note</th>${canDelete?'<th></th>':''}</tr></thead><tbody>
+      ${list.length?list.map(c=>`<tr><td>${c.date}</td><td>${esc(c.client)}</td><td class="num">${money(c.amount)}</td><td>${esc(c.chequeNo)}</td><td>${esc(c.bankName)}</td><td>${esc(c.chequeDate||'')}</td><td style="color:var(--ink3)">${esc(c.note||'')}</td>${canDelete?`<td><button class="btn btn-xs btn-danger" onclick="delCheque('${c.id}')">✕</button></td>`:''}</tr>`).join(''):`<tr><td colspan="8" style="color:var(--ink3);text-align:center;padding:1.5rem">No cheques logged.</td></tr>`}
     </tbody></table></div>`;
 }
 async function addCheque(){
