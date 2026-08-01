@@ -124,6 +124,9 @@
     <div class="card">
       <div class="f"><label>Username</label><input id="l-user" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <div class="f"><label>Password</label><input id="l-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink2);margin-bottom:.9rem;cursor:pointer;font-weight:500">
+        <input type="checkbox" id="l-stay" checked style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">Stay signed in on this device
+      </label>
       <button class="btn btn-primary" style="width:100%" id="login-btn" onclick="doLogin()">Sign In</button>
       <p class="err" id="l-err"></p>
       <p style="font-size:11px;color:var(--ink3);margin-top:14px;text-align:center;cursor:pointer" onclick="resetBackend()">⚙ Reconfigure</p>
@@ -301,7 +304,11 @@ async function doLogin(){
     if(!fast){ r = await api('login', { username, password }); }
     if(!r || !r.ok){ err.textContent=(r&&r.error)||'Login failed.'; err.style.display='block'; return; }
     AUTH = { username, password };
-    sessionStorage.setItem('alrasa_auth', JSON.stringify(AUTH));
+    // "Stay signed in" keeps the session across browser restarts
+    // (localStorage); otherwise it lasts only for this tab (sessionStorage).
+    const stay = $('l-stay') && $('l-stay').checked;
+    (stay ? localStorage : sessionStorage).setItem('alrasa_auth', JSON.stringify(AUTH));
+    (stay ? sessionStorage : localStorage).removeItem('alrasa_auth');
     if(fast && r.me){ DB = r; ME = r.me; }
     else { overlay(true,'Loading your data…','Almost there…'); await sync(); }
     if(!DB || !ME){ err.textContent='Could not load your data. Please try again.'; err.style.display='block'; return; }
@@ -309,7 +316,7 @@ async function doLogin(){
   }catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
   finally{ btn.disabled=false; btn.textContent='Sign In'; overlay(false); }
 }
-function logout(){ AUTH=null; DB=null; ME=null; sessionStorage.removeItem('alrasa_auth'); show('screen-login'); $('l-pass').value=''; }
+function logout(){ AUTH=null; DB=null; ME=null; sessionStorage.removeItem('alrasa_auth'); localStorage.removeItem('alrasa_auth'); show('screen-login'); $('l-pass').value=''; }
 
 async function sync(){
   try{ DB = await api('getAll'); ME = DB.me; if(curPage) renderPage(curPage); return DB; }
@@ -693,7 +700,7 @@ async function resetPass(id,name){
 function tick(){ $('clock').textContent = nowClock() + ' · ' + todayStr(); }
 setInterval(tick,20000); tick();
 (function boot(){
-  const savedAuth = sessionStorage.getItem('alrasa_auth');
+  const savedAuth = localStorage.getItem('alrasa_auth') || sessionStorage.getItem('alrasa_auth');
   if(!BACKEND_URL){ show('screen-setup'); return; }
   if(savedAuth){
     AUTH = JSON.parse(savedAuth);
