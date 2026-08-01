@@ -247,10 +247,27 @@ async function api(action, params={}){
   const isWrite=/^(upsert|add|delete|set)/.test(action);
   setBusy(true); if(isWrite) writing=true;
   try{
-    const res = await fetch(BACKEND_URL, { method:'POST', body });
-    const json = await res.json();
-    if(json.error) throw new Error(json.error);
-    return json;
+    // Apps Script intermittently answers with a 404 HTML page instead of
+    // JSON. Retry a couple of times so users never see that as an error.
+    let lastErr=null;
+    for(let attempt=1; attempt<=3; attempt++){
+      try{
+        const res = await fetch(BACKEND_URL, { method:'POST', body });
+        const text = await res.text();
+        let json=null;
+        try{ json = JSON.parse(text); }catch(_){ json=null; }
+        if(json){
+          if(json.error) throw new Error(json.error);   // real API error: don't retry
+          return json;
+        }
+        lastErr = new Error('The server did not respond properly.');
+      }catch(e){
+        if(e && e.message && !/did not respond properly/.test(e.message)) throw e;
+        lastErr = e;
+      }
+      if(attempt<3) await new Promise(r=>setTimeout(r, attempt*700));
+    }
+    throw lastErr || new Error('The server did not respond. Please try again.');
   } finally { setBusy(false); if(isWrite) writing=false; }
 }
 
@@ -276,12 +293,18 @@ async function doLogin(){
   btn.disabled = true; btn.textContent = 'Signing in…';
   overlay(true, 'Signing in…', 'Please wait about 3 seconds…');
   try{
-    // Single round trip: verifies the login AND returns the first data load.
-    const r = await api('loginFull', { username, password });
-    if(!r.ok){ err.textContent=r.error||'Login failed.'; err.style.display='block'; return; }
+    // Prefer the single round trip, but fall back to the original two-step
+    // flow so the app works whether or not the backend has been updated.
+    let r=null, fast=true;
+    try{ r = await api('loginFull', { username, password }); }
+    catch(e){ if(/unknown action/i.test(e.message)) fast=false; else throw e; }
+    if(!fast){ r = await api('login', { username, password }); }
+    if(!r || !r.ok){ err.textContent=(r&&r.error)||'Login failed.'; err.style.display='block'; return; }
     AUTH = { username, password };
     sessionStorage.setItem('alrasa_auth', JSON.stringify(AUTH));
-    DB = r; ME = r.me;
+    if(fast && r.me){ DB = r; ME = r.me; }
+    else { overlay(true,'Loading your data…','Almost there…'); await sync(); }
+    if(!DB || !ME){ err.textContent='Could not load your data. Please try again.'; err.style.display='block'; return; }
     launch();
   }catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
   finally{ btn.disabled=false; btn.textContent='Sign In'; overlay(false); }
