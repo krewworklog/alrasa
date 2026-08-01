@@ -276,12 +276,12 @@ async function doLogin(){
   btn.disabled = true; btn.textContent = 'Signing in…';
   overlay(true, 'Signing in…', 'Please wait about 3 seconds…');
   try{
-    const r = await api('login', { username, password });
+    // Single round trip: verifies the login AND returns the first data load.
+    const r = await api('loginFull', { username, password });
     if(!r.ok){ err.textContent=r.error||'Login failed.'; err.style.display='block'; return; }
     AUTH = { username, password };
     sessionStorage.setItem('alrasa_auth', JSON.stringify(AUTH));
-    overlay(true, 'Loading your data…', 'Almost there.');
-    await sync();
+    DB = r; ME = r.me;
     launch();
   }catch(e){ err.textContent='Error: '+e.message; err.style.display='block'; }
   finally{ btn.disabled=false; btn.textContent='Sign In'; overlay(false); }
