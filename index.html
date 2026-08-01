@@ -180,6 +180,8 @@ let curPage = null;
 
 const $ = id => document.getElementById(id);
 function show(scr){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); $(scr).classList.add('active'); }
+// Persistent inline form error — a toast alone is too easy to miss.
+function formErr(id,msg){ const e=$(id); if(!e) return; e.textContent=msg||''; e.style.display=msg?'block':'none'; }
 function toast(msg,type=''){ const t=$('toast'); t.textContent=msg; t.className='toast show '+type; setTimeout(()=>t.className='toast',2600); }
 function money(n){ return (Math.round((+n||0)*100)/100).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -365,8 +367,9 @@ function renderInvoicing(el){
         <div class="f"><label>AN — Night (AED)</label><input type="number" id="inv-an" min="0" step="0.01" placeholder="0"></div>
         <div class="f"><label>HO — Office (AED)</label><input type="number" id="inv-ho" min="0" step="0.01" placeholder="0"></div>
       </div>
-      <div class="f"><label>Note / reason (required when changing a past day)</label><input id="inv-note" placeholder="e.g. Invoice AL-123 revised 5000→4500"></div>
+      <div class="f"><label>Note / reason (optional)</label><input id="inv-note" placeholder="e.g. Invoice AL-123 revised 5000→4500"></div>
       <button class="btn btn-primary" onclick="saveInvoice()">Save day</button>
+      <p class="err" id="inv-err"></p>
     </div>`:''}
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">AL</th><th class="num">AN</th><th class="num">HO</th><th class="num">Total</th><th>By</th>${canEdit||canDelete?'<th></th>':''}</tr></thead><tbody>
       ${list.length?list.map(i=>`<tr><td>${i.date}</td><td class="num">${money(i.al)}</td><td class="num">${money(i.an)}</td><td class="num">${money(i.ho)}</td><td class="num" style="font-weight:700">${money(+i.al+ +i.an+ +i.ho)}</td><td style="color:var(--ink3)">${esc(i.updatedBy||'')}</td>${canEdit||canDelete?`<td style="white-space:nowrap">${canEdit?`<button class="btn btn-xs" onclick="editInv('${i.date}')">Edit</button>`:''}${canDelete?` <button class="btn btn-xs btn-danger" onclick="delInv('${i.id}','${i.date}')">✕</button>`:''}</td>`:''}</tr>`).join(''):`<tr><td colspan="7" style="color:var(--ink3);text-align:center;padding:1.5rem">No invoices yet.</td></tr>`}
@@ -383,17 +386,23 @@ function editInv(date){ $('inv-date').value=date; loadInvDate(); $('inv-note').f
 async function saveInvoice(){
   if(writing) return;
   const date=$('inv-date').value, al=$('inv-al').value||0, an=$('inv-an').value||0, ho=$('inv-ho').value||0, note=$('inv-note').value.trim();
-  if(!date){ toast('Pick a date.','err'); return; }
+  const fail=m=>{ formErr('inv-err',m); toast(m,'err'); };
+  if(!date){ fail('Pick a date.'); return; }
   if(ME.role==='neethu' && rulesLive()){
-    if(date<openingDate()){ toast('Entries start from '+openingDate()+'.','err'); return; }
+    if(date<openingDate()){ fail('Entries start from '+openingDate()+'.'); return; }
     const mn=windowMin(INVOICE_CUTOFF);
-    if(date<mn||date>todayStr()){ toast(nowMins()<INVOICE_CUTOFF?`Only ${yesterdayStr()} or ${todayStr()} can be entered now.`:`Yesterday closed at ${cutoffLabel(INVOICE_CUTOFF)} — only today can be entered.`,'err'); return; }
+    if(date<mn||date>todayStr()){ fail(nowMins()<INVOICE_CUTOFF?`Only ${yesterdayStr()} or ${todayStr()} can be entered now.`:`Yesterday closed at ${cutoffLabel(INVOICE_CUTOFF)} — only today can be entered.`); return; }
   }
-  const existing = invRow(date);
-  const changed = existing && (String(+existing.al)!==String(+al)||String(+existing.an)!==String(+an)||String(+existing.ho)!==String(+ho));
-  if(changed && !note){ toast('Enter a note/reason when changing a saved day.','err'); return; }
-  try{ await api('upsertInvoice',{date,al,an,ho,note,reason:note}); await sync(); toast('Saved ✅','ok'); }
-  catch(e){ toast('Failed: '+e.message,'err'); }
+  formErr('inv-err','');
+  // The note is optional — every change is recorded in the audit log anyway,
+  // and blocking the save here once cost a real entry.
+  try{
+    await api('upsertInvoice',{date,al,an,ho,note,reason:note});
+    await sync();
+    formErr('inv-err','');
+    toast(`Saved ✅  ${date}: total ${money((+al)+(+an)+(+ho))}`,'ok');
+  }
+  catch(e){ formErr('inv-err','Not saved — '+e.message); toast('Not saved: '+e.message,'err'); }
 }
 
 // ---- COLLECTION (Accountant / owner) ----
@@ -416,6 +425,7 @@ function renderCollection(el){
         <div class="f"><label>Expense note</label><input id="col-expnote" placeholder="optional"></div>
       </div>
       <button class="btn btn-primary" onclick="saveCollection()">Save day</button>
+      <p class="err" id="col-err"></p>
     </div>`:''}
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">Cash</th><th class="num">Bank</th><th class="num">Collected</th><th class="num">Expense</th><th>By</th>${ME.role==='owner'?'<th></th>':''}</tr></thead><tbody>
       ${list.length?list.map(c=>`<tr><td>${c.date}</td><td class="num">${money(c.cash)}</td><td class="num">${money(c.bank)}</td><td class="num" style="font-weight:700">${money(+c.cash+ +c.bank)}</td><td class="num" style="color:var(--amber)">${money(c.expense)}</td><td style="color:var(--ink3)">${esc(c.updatedBy||'')}</td>${ME.role==='owner'?`<td><button class="btn btn-xs btn-danger" onclick="delCol('${c.id}','${c.date}')">✕</button></td>`:''}</tr>`).join(''):`<tr><td colspan="7" style="color:var(--ink3);text-align:center;padding:1.5rem">No collection entries yet.</td></tr>`}
@@ -431,14 +441,20 @@ function loadColDate(){
 async function saveCollection(){
   if(writing) return;
   const date=$('col-date').value, cash=$('col-cash').value||0, bank=$('col-bank').value||0, expense=$('col-exp').value||0, expenseNote=$('col-expnote').value.trim();
-  if(!date){ toast('Pick a date.','err'); return; }
+  const cfail=m=>{ formErr('col-err',m); toast(m,'err'); };
+  if(!date){ cfail('Pick a date.'); return; }
   if(canCollect() && rulesLive()){
-    if(date<openingDate()){ toast('Entries start from '+openingDate()+'.','err'); return; }
+    if(date<openingDate()){ cfail('Entries start from '+openingDate()+'.'); return; }
     const mn=windowMin(COLLECTION_CUTOFF);
-    if(date<mn||date>todayStr()){ toast(nowMins()<COLLECTION_CUTOFF?`Only ${yesterdayStr()} or ${todayStr()} can be entered now.`:`Yesterday closed at ${cutoffLabel(COLLECTION_CUTOFF)} — only today can be entered.`,'err'); return; }
+    if(date<mn||date>todayStr()){ cfail(nowMins()<COLLECTION_CUTOFF?`Only ${yesterdayStr()} or ${todayStr()} can be entered now.`:`Yesterday closed at ${cutoffLabel(COLLECTION_CUTOFF)} — only today can be entered.`); return; }
   }
-  try{ await api('upsertCollection',{date,cash,bank,expense,expenseNote}); await sync(); toast('Saved ✅','ok'); }
-  catch(e){ toast('Failed: '+e.message,'err'); }
+  formErr('col-err','');
+  try{
+    await api('upsertCollection',{date,cash,bank,expense,expenseNote});
+    await sync();
+    toast(`Saved ✅  ${date}: collected ${money((+cash)+(+bank))}`,'ok');
+  }
+  catch(e){ formErr('col-err','Not saved — '+e.message); toast('Not saved: '+e.message,'err'); }
 }
 
 // ---- CHEQUES (Accountant / owner) ----
