@@ -233,22 +233,10 @@ function setBusy(on){
   busy += on?1:-1; if(busy<0) busy=0;
   const p=$('progress'); if(p) p.classList.toggle('show', busy>0);
 }
-let overlayTimer=null;
 function overlay(show,txt,sub){
   const o=$('overlay'); if(!o) return;
   if(txt!==undefined) $('overlay-txt').textContent=txt;
-  clearInterval(overlayTimer);
-  if(show){
-    const base = sub||'Please wait about 3 seconds…';
-    const start = Date.now();
-    $('overlay-sub').textContent = base;
-    // Keep the user informed rather than leaving a silent spinner.
-    overlayTimer = setInterval(()=>{
-      const s = Math.round((Date.now()-start)/1000);
-      $('overlay-sub').textContent = s<4 ? base
-        : (s<10 ? `Still working… ${s}s` : `Taking longer than usual… ${s}s — check your connection.`);
-    }, 500);
-  } else $('overlay-sub').textContent='';
+  $('overlay-sub').textContent = show ? (sub||'') : '';
   o.classList.toggle('show', !!show);
 }
 
@@ -264,9 +252,13 @@ async function api(action, params={}){
     // Apps Script intermittently answers with a 404 HTML page instead of
     // JSON. Retry a couple of times so users never see that as an error.
     let lastErr=null;
-    for(let attempt=1; attempt<=3; attempt++){
+    for(let attempt=1; attempt<=2; attempt++){
+      // Hard timeout per attempt — without this a stalled request hangs
+      // forever and the retries stack up into a minute-plus wait.
+      const ctrl = new AbortController();
+      const timer = setTimeout(()=>ctrl.abort(), 20000);
       try{
-        const res = await fetch(BACKEND_URL, { method:'POST', body });
+        const res = await fetch(BACKEND_URL, { method:'POST', body, signal: ctrl.signal });
         const text = await res.text();
         let json=null;
         try{ json = JSON.parse(text); }catch(_){ json=null; }
@@ -276,10 +268,11 @@ async function api(action, params={}){
         }
         lastErr = new Error('The server did not respond properly.');
       }catch(e){
-        if(e && e.message && !/did not respond properly/.test(e.message)) throw e;
-        lastErr = e;
-      }
-      if(attempt<3) await new Promise(r=>setTimeout(r, attempt*700));
+        if(e && e.name==='AbortError') lastErr = new Error('The server took too long to respond. Please try again.');
+        else if(e && e.message && !/did not respond properly/.test(e.message)) throw e;
+        else lastErr = e;
+      } finally { clearTimeout(timer); }
+      if(attempt<2) await new Promise(r=>setTimeout(r, 600));
     }
     throw lastErr || new Error('The server did not respond. Please try again.');
   } finally { setBusy(false); if(isWrite) writing=false; }
@@ -305,7 +298,7 @@ async function doLogin(){
   if(!username||!password){ err.textContent='Enter username and password.'; err.style.display='block'; return; }
   const btn = $('login-btn');
   btn.disabled = true; btn.textContent = 'Signing in…';
-  overlay(true, 'Signing in…', 'Please wait about 3 seconds…');
+  overlay(true, 'Signing in…', '');
   try{
     // Prefer the single round trip, but fall back to the original two-step
     // flow so the app works whether or not the backend has been updated.
@@ -716,7 +709,7 @@ setInterval(tick,20000); tick();
   if(savedAuth){
     AUTH = JSON.parse(savedAuth);
     show('screen-login');
-    overlay(true,'Loading…','Please wait about 3 seconds…');
+    overlay(true,'Loading…','');
     sync()
       .then(()=>{ if(DB&&ME) launch(); else show('screen-login'); })
       .catch(()=>show('screen-login'))
