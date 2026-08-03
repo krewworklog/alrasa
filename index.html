@@ -194,17 +194,28 @@ function nowMins(){ const s=nowClock(); return +s.slice(0,2)*60 + +s.slice(3); }
 
 // Live entry rules begin on this date; before it everything is open so the
 // app can be trialled. Must match ENFORCE_FROM in Code.gs.
-const ENFORCE_FROM='2026-08-01';
+const ENFORCE_FROM='2026-08-04';   // rules go live Tue 4 Aug; today stays open
 const INVOICE_CUTOFF=10*60, COLLECTION_CUTOFF=14*60;
+// Sunday is off, so Saturday's work can't be entered the next morning. On
+// Monday both Saturday and Sunday stay open until 11:00.
+const MONDAY_CATCHUP=11*60;
 function rulesLive(){ return todayStr()>=ENFORCE_FROM; }
 function cutoffLabel(m){ const h=Math.floor(m/60), mm=m%60; return ((h%12)||12)+':'+(mm<10?'0'+mm:mm)+(h<12?' AM':' PM'); }
-// Earliest date still editable: yesterday until the cutoff, else today.
+function isMondayToday(){ return new Date(todayStr()+'T12:00:00Z').getUTCDay()===1; }
+function saturdayStr(){ const d=new Date(Date.parse(yesterdayStr()+'T12:00:00Z')-86400000); return d.toISOString().slice(0,10); }
+// Earliest date still editable right now.
 function windowMin(cutoff){
   if(!rulesLive()) return '';
+  if(isMondayToday()) return nowMins()<MONDAY_CATCHUP ? saturdayStr() : todayStr();
   return nowMins()<cutoff ? yesterdayStr() : todayStr();
 }
 function windowNote(cutoff,label){
   if(!rulesLive()) return `Open entry until ${ENFORCE_FROM} — you can add any date while testing.`;
+  if(isMondayToday()){
+    return nowMins()<MONDAY_CATCHUP
+      ? `It's Monday — you can still enter <strong>Saturday (${saturdayStr()})</strong> and <strong>Sunday (${yesterdayStr()})</strong> until <strong>${cutoffLabel(MONDAY_CATCHUP)}</strong>.`
+      : `The weekend ${label} closed at ${cutoffLabel(MONDAY_CATCHUP)} this morning. Only <strong>today (${todayStr()})</strong> can be entered now.`;
+  }
   return nowMins()<cutoff
     ? `You can still enter or correct <strong>yesterday (${yesterdayStr()})</strong> until <strong>${cutoffLabel(cutoff)}</strong> today.`
     : `Yesterday's ${label} closed at ${cutoffLabel(cutoff)}. Only <strong>today (${todayStr()})</strong> can be entered now.`;
