@@ -167,13 +167,22 @@
 <script>
 // Baked in so staff never see the setup screen. A saved value (from the
 // ⚙ Reconfigure link) takes priority, e.g. if the backend is ever redeployed.
-const DEFAULT_BACKEND='https://script.google.com/macros/s/AKfycbx8CLQQWLKGpRI969XC2DHxHuib32nFOnlS6yrl-jJkQHGoJ4Cp6vxzzwSwcCy46As/exec';
+const DEFAULT_BACKEND='https://script.google.com/macros/s/AKfycbzI3yOiP5Bnb66pCdikUhGYXFVMVcxhjSpE9UMX8GI7_xKxEHa4QS_Ph1gyLqFDz_q8-w/exec';
+// Backends that have been retired. A browser that saved one of these must be
+// moved off it, or it would keep talking to a database nobody maintains.
+const RETIRED_BACKENDS=['AKfycbx8CLQQWLKG'];
 function validBackend(u){ return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(String(u||'').trim()); }
+function retiredBackend(u){ const s=String(u||''); return RETIRED_BACKENDS.some(id=>s.indexOf(id)>=0); }
 // Ignore anything saved that isn't a proper /exec URL, so a stale or mistyped
 // value can never shadow the working default.
 let BACKEND_URL = (function(){
   const saved = localStorage.getItem('alrasa_url');
-  if(saved && !validBackend(saved)) localStorage.removeItem('alrasa_url');
+  if(saved && (!validBackend(saved) || retiredBackend(saved))){
+    localStorage.removeItem('alrasa_url');
+    // Drop any data cached from the retired backend too.
+    Object.keys(localStorage).forEach(k=>{ if(k.indexOf('alrasa_db_')===0) localStorage.removeItem(k); });
+    return DEFAULT_BACKEND;
+  }
   return validBackend(saved) ? saved.trim() : DEFAULT_BACKEND;
 })();
 let AUTH = null;           // {username, password}
