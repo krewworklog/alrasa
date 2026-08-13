@@ -210,7 +210,7 @@ const INVOICE_CUTOFF=10*60, COLLECTION_CUTOFF=14*60;
 const MONDAY_CATCHUP=11*60;
 // Catch-up period: until this date (inclusive) any past date is editable at
 // any time. Must match GRACE_UNTIL in Code.gs.
-const GRACE_UNTIL='2026-08-10';
+const GRACE_UNTIL='2026-08-31';
 function inGrace(){ return todayStr()<=GRACE_UNTIL; }
 function rulesLive(){ return todayStr()>=ENFORCE_FROM; }
 function cutoffLabel(m){ const h=Math.floor(m/60), mm=m%60; return ((h%12)||12)+':'+(mm<10?'0'+mm:mm)+(h<12?' AM':' PM'); }
