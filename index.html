@@ -213,6 +213,18 @@ const MONDAY_CATCHUP=11*60;
 const GRACE_UNTIL='2026-09-10';
 function inGrace(){ return todayStr()<=GRACE_UNTIL; }
 function rulesLive(){ return todayStr()>=ENFORCE_FROM; }
+// Temporary access window (owner-editable in Settings). Three config keys:
+//   accessWindowStart / accessWindowEnd  the range of DATES that may be edited
+//   accessWindowUntil                    the day the window itself closes
+// Keeping the expiry separate from the date range is what lets the owner
+// reopen a past month — "edit 9–24 Sep, for the next week" needs an end of
+// 24 Sep and an expiry a week out. Blank expiry falls back to the end date,
+// so windows saved before this existed keep working.
+function accessWindowStart(){ return DB.config.accessWindowStart||''; }
+function accessWindowEnd(){ return DB.config.accessWindowEnd||''; }
+function accessWindowUntil(){ return DB.config.accessWindowUntil||accessWindowEnd(); }
+function accessWindowActive(){ const u=accessWindowUntil(); return !!u && !!accessWindowEnd() && todayStr()<=u; }
+function inAccessWindow(d){ const s=accessWindowStart(), e=accessWindowEnd(); return accessWindowActive() && s && e && d>=s && d<=e; }
 function cutoffLabel(m){ const h=Math.floor(m/60), mm=m%60; return ((h%12)||12)+':'+(mm<10?'0'+mm:mm)+(h<12?' AM':' PM'); }
 function isMondayToday(){ return new Date(todayStr()+'T12:00:00Z').getUTCDay()===1; }
 function saturdayStr(){ const d=new Date(Date.parse(yesterdayStr()+'T12:00:00Z')-86400000); return d.toISOString().slice(0,10); }
@@ -228,22 +240,32 @@ function lastWorkedDay(){
 }
 // Earliest date still editable right now.
 function windowMin(cutoff){
-  if(!rulesLive()) return '';
-  if(inGrace()) return openingDate();          // catch-up: back to the start date
-  if(isMondayToday()) return nowMins()<MONDAY_CATCHUP ? saturdayStr() : todayStr();
-  return nowMins()<cutoff ? yesterdayStr() : todayStr();
+  const normal = (()=>{
+    if(!rulesLive()) return '';
+    if(inGrace()) return openingDate();          // catch-up: back to the start date
+    if(isMondayToday()) return nowMins()<MONDAY_CATCHUP ? saturdayStr() : todayStr();
+    return nowMins()<cutoff ? yesterdayStr() : todayStr();
+  })();
+  if(accessWindowActive()){
+    const s = accessWindowStart();
+    if(s && (!normal || s<normal)) return s;      // temporary window reaches further back
+  }
+  return normal;
 }
 function windowNote(cutoff,label){
-  if(!rulesLive()) return `Open entry until ${ENFORCE_FROM} — you can add any date while testing.`;
-  if(inGrace()) return `Catch-up period — you can enter or correct <strong>any date from ${openingDate()}</strong> at any time, until <strong>${GRACE_UNTIL}</strong>. After that: today anytime, yesterday until ${cutoffLabel(cutoff)}.`;
+  const extra = accessWindowActive()
+    ? ` <strong>Temporary window open:</strong> any date from ${accessWindowStart()} to ${accessWindowEnd()} can also be entered or corrected, until ${accessWindowUntil()}.`
+    : '';
+  if(!rulesLive()) return `Open entry until ${ENFORCE_FROM} — you can add any date while testing.${extra}`;
+  if(inGrace()) return `Catch-up period — you can enter or correct <strong>any date from ${openingDate()}</strong> at any time, until <strong>${GRACE_UNTIL}</strong>. After that: today anytime, yesterday until ${cutoffLabel(cutoff)}.${extra}`;
   if(isMondayToday()){
-    return nowMins()<MONDAY_CATCHUP
+    return (nowMins()<MONDAY_CATCHUP
       ? `It's Monday — you can still enter <strong>Saturday (${saturdayStr()})</strong> and <strong>Sunday (${yesterdayStr()})</strong> until <strong>${cutoffLabel(MONDAY_CATCHUP)}</strong>.`
-      : `The weekend ${label} closed at ${cutoffLabel(MONDAY_CATCHUP)} this morning. Only <strong>today (${todayStr()})</strong> can be entered now.`;
+      : `The weekend ${label} closed at ${cutoffLabel(MONDAY_CATCHUP)} this morning. Only <strong>today (${todayStr()})</strong> can be entered now.`) + extra;
   }
-  return nowMins()<cutoff
+  return (nowMins()<cutoff
     ? `You can still enter or correct <strong>yesterday (${yesterdayStr()})</strong> until <strong>${cutoffLabel(cutoff)}</strong> today.`
-    : `Yesterday's ${label} closed at ${cutoffLabel(cutoff)}. Only <strong>today (${todayStr()})</strong> can be entered now.`;
+    : `Yesterday's ${label} closed at ${cutoffLabel(cutoff)}. Only <strong>today (${todayStr()})</strong> can be entered now.`) + extra;
 }
 // Data entry hasn't started yet if today is before the opening date — except
 // during the trial period, when everything stays open for testing.
@@ -386,7 +408,7 @@ const NAV = {
   neethu:    [['invoicing','🧾 Invoicing']],
   accountant:[['collection','💵 Collection'],['cheques','🏦 Cheques']],
   sales:     [['mysales','💼 My Sales']],
-  owner:     [['dashboard','📊 Dashboard'],['tbc','📈 To Be Collected'],['salesteam','💼 Sales Team'],['invoicing','🧾 Invoicing'],['collection','💵 Collection'],['cheques','🏦 Cheques'],['settings','⚙ Settings']]
+  owner:     [['dashboard','📊 Dashboard'],['tbc','📈 To Be Collected'],['excess','📆 Monthly Excess'],['salesteam','💼 Sales Team'],['invoicing','🧾 Invoicing'],['collection','💵 Collection'],['cheques','🏦 Cheques'],['settings','⚙ Settings']]
 };
 function launch(){
   show('screen-app');
@@ -406,7 +428,7 @@ function go(page){
 }
 function renderPage(page){
   const el = $('content');
-  const R = { invoicing:renderInvoicing, collection:renderCollection, cheques:renderCheques, dashboard:renderDashboard, tbc:renderTbc, settings:renderSettings, mysales:renderMySales, salesteam:renderSalesTeam };
+  const R = { invoicing:renderInvoicing, collection:renderCollection, cheques:renderCheques, dashboard:renderDashboard, tbc:renderTbc, excess:renderExcess, settings:renderSettings, mysales:renderMySales, salesteam:renderSalesTeam };
   (R[page]||(()=>el.innerHTML=''))(el);
 }
 
@@ -427,6 +449,44 @@ function tbc(){
   let bal=openingBalance(); const rows=[];
   sorted.forEach(d=>{ const inv=invTotal(d), col=colTotal(d); bal+=inv-col; rows.push({date:d,inv,col,bal}); });
   return { rows, closing:bal };
+}
+
+// ---- month helpers (dashboard comparison + Monthly Excess view) ----
+function monthKey(d){ return String(d).slice(0,7); }
+function monthLabel(m){ return new Date(m+'-15T12:00:00Z').toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:'UTC'}); }
+function addMonths(m,n){ let y=+m.slice(0,4), mo=+m.slice(5,7)+n; while(mo>12){mo-=12;y++;} while(mo<1){mo+=12;y--;} return y+'-'+String(mo).padStart(2,'0'); }
+// Same metrics/calculations as the dashboard's daily tiles (invTotal, colTotal,
+// expense, net cash = collected − expense), just summed over a calendar month.
+function monthFigures(m){
+  const invRows=(DB.invoices||[]).filter(i=>monthKey(i.date)===m);
+  const colRows=(DB.collection||[]).filter(c=>monthKey(c.date)===m);
+  const inv=invRows.reduce((s,i)=>s+(+i.al+ +i.an+ +i.ho),0);
+  const col=colRows.reduce((s,c)=>s+(+c.cash+ +c.bank),0);
+  const exp=colRows.reduce((s,c)=>s+(+c.expense||0),0);
+  return { inv, col, exp, net: col-exp };
+}
+// Same opening+invoiced−collected math as tbc() (the running "to be collected"
+// balance), just grouped by calendar month instead of accumulated day by day.
+// A month's "excess" here is its contribution to that same running total.
+// Everything that matters for one month, in one pass: what was invoiced, what
+// came in, what went out, and the gap between the first two.
+function monthTotals(m){
+  let inv=0,col=0,exp=0,days=0;
+  (DB.invoices||[]).forEach(r=>{ if(monthKey(r.date)===m) inv+=(+r.al+ +r.an+ +r.ho); });
+  (DB.collection||[]).forEach(r=>{ if(monthKey(r.date)===m){ col+=(+r.cash+ +r.bank); exp+=(+r.expense||0); days++; } });
+  return { month:m, inv, col, exp, net:col-exp, excess:inv-col, days };
+}
+function prevMonthKey(){ return addMonths(monthKey(todayStr()),-1); }
+
+function monthlyExcess(){
+  const odMonth = monthKey(openingDate());
+  const curMonth = monthKey(todayStr());
+  const byMonth = {};
+  tbc().rows.forEach(r=>{ const m=monthKey(r.date); byMonth[m]=(byMonth[m]||0)+(r.inv-r.col); });
+  const months=[]; let m=odMonth;
+  while(m<=curMonth){ months.push(m); m=addMonths(m,1); }
+  let cum=0;
+  return months.map(mo=>{ const excess=byMonth[mo]||0; cum+=excess; return { month:mo, excess, carried:cum, inProgress:mo===curMonth }; });
 }
 
 // ---- INVOICING (Neethu / owner) ----
@@ -608,6 +668,8 @@ function renderDashboard(el){
   // are both respected without restating them here.
   const wMin = windowMin(COLLECTION_CUTOFF);
   const yLate = !ycr && !yBefore && !!wMin && y < wMin;
+  const curM = monthKey(t), prevM = addMonths(curM,-1);
+  const curMF = monthFigures(curM), prevMF = monthFigures(prevM);
   el.innerHTML = `
     <div class="ph"><div class="pt">Dashboard</div><div class="ps">Today (${t}) at a glance — and the running amount still to be collected.</div></div>
 
@@ -638,6 +700,41 @@ function renderDashboard(el){
       <div class="sc"><div class="sl">To be collected</div><div class="sv" style="color:${closing>0?'var(--red)':'var(--green)'}">${money(closing)}</div><div class="ss">cumulative</div></div>
       <div class="sc"><div class="sl">Cheques on hand</div><div class="sv">${money(chqTotal)}</div><div class="ss">AED · memo</div></div>
     </div>
+    <div class="tbl-wrap" style="margin-bottom:1.1rem"><div class="ct" style="padding:6px 4px 0">This month vs last month</div><table><thead><tr><th>Metric</th><th class="num">${monthLabel(curM)} <span style="font-weight:400;color:var(--ink3)">(in progress)</span></th><th class="num">${monthLabel(prevM)}</th></tr></thead><tbody>
+      <tr><td>Invoiced</td><td class="num" style="color:var(--accent)">${money(curMF.inv)}</td><td class="num" style="color:var(--accent)">${money(prevMF.inv)}</td></tr>
+      <tr><td>Collected</td><td class="num" style="color:var(--green)">${money(curMF.col)}</td><td class="num" style="color:var(--green)">${money(prevMF.col)}</td></tr>
+      <tr><td>Expense</td><td class="num" style="color:var(--amber)">${money(curMF.exp)}</td><td class="num" style="color:var(--amber)">${money(prevMF.exp)}</td></tr>
+      <tr><td style="font-weight:700">Net cash</td><td class="num" style="font-weight:700">${money(curMF.net)}</td><td class="num" style="font-weight:700">${money(prevMF.net)}</td></tr>
+    </tbody></table></div>
+    ${(()=>{
+      const cur=monthTotals(monthKey(t)), prev=monthTotals(prevMonthKey());
+      const cell=(a,b,label,colour,sub)=>`<tr>
+        <td style="color:var(--ink3);font-size:13px">${label}${sub?`<div style="font-size:11px">${sub}</div>`:''}</td>
+        <td class="num" style="${colour||''}">${money(a)}</td>
+        <td class="num" style="${colour||''}">${money(b)}</td></tr>`;
+      const delta=cur.col-prev.col;
+      return `<div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <div class="ct" style="margin-bottom:0">📆 Month on month</div>
+          <div style="font-size:12px;color:var(--ink3)">${monthLabel(prevMonthKey())} is complete · ${monthLabel(monthKey(t))} is still running</div>
+        </div>
+        <div class="tbl-wrap" style="border:none;padding:0"><table>
+          <thead><tr><th></th><th class="num">${monthLabel(prevMonthKey())}</th><th class="num">${monthLabel(monthKey(t))}</th></tr></thead>
+          <tbody>
+            ${cell(prev.inv,cur.inv,'Invoiced','color:var(--accent)')}
+            ${cell(prev.col,cur.col,'Collected','color:var(--green)')}
+            ${cell(prev.exp,cur.exp,'Expense','color:var(--amber)')}
+            ${cell(prev.net,cur.net,'Net cash','font-weight:700','collected − expense')}
+            ${cell(prev.excess,cur.excess,'Still to collect','color:var(--red)','invoiced − collected')}
+            <tr><td style="color:var(--ink3);font-size:13px">Days recorded</td>
+                <td class="num" style="color:var(--ink3)">${prev.days}</td>
+                <td class="num" style="color:var(--ink3)">${cur.days}</td></tr>
+          </tbody></table></div>
+        <div style="font-size:12px;color:var(--ink3);margin-top:10px">
+          ${prev.col?`Collection is <strong style="color:${delta>=0?'var(--green)':'var(--red)'}">${delta>=0?'up':'down'} ${money(Math.abs(delta))}</strong> on ${monthLabel(prevMonthKey())} so far, with ${cur.days} of the month's days recorded.`:`No collection recorded for ${monthLabel(prevMonthKey())}, so there is nothing to compare against yet.`}
+        </div>
+      </div>`;
+    })()}
     <div class="tbl-wrap"><div class="ct" style="padding:6px 4px 0">Last 7 recorded days</div><table><thead><tr><th>Date</th><th class="num">Invoiced</th><th class="num">Collected</th><th class="num">Balance</th></tr></thead><tbody>
       ${last7.length?last7.map(r=>`<tr><td>${r.date}</td><td class="num">${money(r.inv)}</td><td class="num">${money(r.col)}</td><td class="num" style="font-weight:700;color:${r.bal>0?'var(--red)':'var(--green)'}">${money(r.bal)}</td></tr>`).join(''):`<tr><td colspan="4" style="color:var(--ink3);text-align:center;padding:1.5rem">No data yet.</td></tr>`}
     </tbody></table></div>`;
@@ -658,6 +755,26 @@ function renderTbc(el){
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num">Invoiced</th><th class="num">Collected</th><th class="num">Balance carried</th></tr></thead><tbody>
       <tr><td style="color:var(--ink3)">${openingDate()} · opening</td><td class="num">—</td><td class="num">—</td><td class="num" style="font-weight:700">${money(openingBalance())}</td></tr>
       ${rows.map(r=>`<tr><td>${r.date}</td><td class="num">${money(r.inv)}</td><td class="num">${money(r.col)}</td><td class="num" style="font-weight:700;color:${r.bal>0?'var(--red)':'var(--green)'}">${money(r.bal)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+// ---- MONTHLY EXCESS (owner) ----
+// Same invoiced − collected math as "To Be Collected" (tbc), just summed by
+// calendar month instead of accumulated day by day, so the opening balance
+// (500,000 by default) can be shown separately from what's accrued since.
+function renderExcess(el){
+  const rows = monthlyExcess();
+  const carriedNow = rows.length ? rows[rows.length-1].carried : 0;
+  const { closing } = tbc();
+  const disp = [...rows].reverse();
+  el.innerHTML = `
+    <div class="ph"><div class="pt">Monthly Excess</div><div class="ps">What's accrued since ${openingDate()}, excluding the ${money(openingBalance())} opening balance. Same calculation as "To Be Collected" (invoiced − collected), grouped by month instead of running day by day.</div></div>
+    <div class="sg">
+      <div class="sc"><div class="sl">Carried forward (excl. opening)</div><div class="sv" style="color:${carriedNow>0?'var(--red)':'var(--green)'}">${money(carriedNow)}</div></div>
+      <div class="sc"><div class="sl">To be collected (incl. opening ${money(openingBalance())})</div><div class="sv" style="color:${closing>0?'var(--red)':'var(--green)'}">${money(closing)}</div></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>Month</th><th class="num">Excess for the month</th><th class="num">Carried-forward total</th></tr></thead><tbody>
+      ${disp.length?disp.map(r=>`<tr><td>${monthLabel(r.month)}${r.inProgress?' <span class="tag t-am">in progress</span>':''}</td><td class="num" style="color:${r.excess>0?'var(--red)':'var(--green)'}">${money(r.excess)}</td><td class="num" style="font-weight:700;color:${r.carried>0?'var(--red)':'var(--green)'}">${money(r.carried)}</td></tr>`).join(''):`<tr><td colspan="3" style="color:var(--ink3);text-align:center;padding:1.5rem">No data yet.</td></tr>`}
     </tbody></table></div>`;
 }
 
@@ -689,6 +806,18 @@ function renderMySales(el){
       <button class="btn btn-primary" onclick="saveMySales()">${today?'Update today':'Save today'}</button>
       ${today?`<span style="font-size:12px;color:var(--ink3);margin-left:10px">last saved ${esc(today.updatedAt||'')}</span>`:''}
     </div>
+    ${accessWindowActive()?`<div class="card" style="margin-bottom:1rem;border-color:rgba(245,158,11,.35)">
+      <div class="ct">⏰ Temporary window — backdated entry</div>
+      <div style="font-size:12px;color:var(--ink2);margin-bottom:10px">You can add or correct any day from <strong>${accessWindowStart()}</strong> to <strong>${accessWindowEnd()}</strong>, until <strong>${accessWindowEnd()}</strong>.</div>
+      <div class="grid2"><div class="f"><label>Date</label><input type="date" id="sal-back-date" value="${accessWindowStart()}" min="${accessWindowStart()}" max="${accessWindowEnd()<t?accessWindowEnd():t}" onchange="loadBackSales()"></div><div class="f"><label>&nbsp;</label><div style="font-size:12px;color:var(--ink3);padding-top:9px" id="sal-back-hint"></div></div></div>
+      <div class="grid3">
+        <div class="f"><label>No. of quotations made</label><input type="number" id="sal-back-n" min="0" step="1" placeholder="0"></div>
+        <div class="f"><label>Quotation amount made (AED)</label><input type="number" id="sal-back-q" min="0" step="0.01" placeholder="0"></div>
+        <div class="f"><label>Sales converted (AED)</label><input type="number" id="sal-back-c" min="0" step="0.01" placeholder="0"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveBackSales()">Save this date</button>
+      <p class="err" id="sal-back-err"></p>
+    </div>`:''}
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th class="num"># Quots</th><th class="num">Quotation</th><th class="num">Converted</th><th>Money received</th><th>Ticked on</th></tr></thead><tbody>
       ${mine.length?mine.map(s=>`<tr>
         <td>${s.date}${s.date===t?' <span class="tag t-ok">today</span>':''}</td>
@@ -699,6 +828,7 @@ function renderMySales(el){
         <td style="color:var(--ink3);font-size:12px">${esc(s.receivedAt||'—')}</td>
       </tr>`).join(''):`<tr><td colspan="6" style="color:var(--ink3);text-align:center;padding:1.5rem">No entries yet.</td></tr>`}
     </tbody></table></div>`;
+  if(accessWindowActive()) loadBackSales();
 }
 async function saveMySales(){
   if(writing) return;
@@ -706,6 +836,24 @@ async function saveMySales(){
   if(+quotation<0||+converted<0||+quotCount<0){ toast('Values cannot be negative.','err'); return; }
   try{ await api('upsertSales',{date:todayStr(),quotation,converted,quotCount}); await sync(); toast('Saved ✅','ok'); }
   catch(e){ toast('Failed: '+e.message,'err'); }
+}
+function loadBackSales(){
+  if(!$('sal-back-date')) return;
+  const d=$('sal-back-date').value;
+  const r=(DB.sales||[]).find(s=>s.date===d);
+  $('sal-back-hint').textContent = r?`Editing existing entry (last by ${r.updatedBy||'—'})`:'New entry';
+  $('sal-back-n').value=r?(r.quotCount||''):''; $('sal-back-q').value=r?r.quotation:''; $('sal-back-c').value=r?r.converted:'';
+}
+async function saveBackSales(){
+  if(writing) return;
+  const date=$('sal-back-date').value, quotation=$('sal-back-q').value||0, converted=$('sal-back-c').value||0, quotCount=$('sal-back-n').value||0;
+  const fail=m=>{ formErr('sal-back-err',m); toast(m,'err'); };
+  if(!date){ fail('Pick a date.'); return; }
+  if(+quotation<0||+converted<0||+quotCount<0){ fail('Values cannot be negative.'); return; }
+  if(!inAccessWindow(date)){ fail('That date is outside the temporary window.'); return; }
+  formErr('sal-back-err','');
+  try{ await api('upsertSales',{date,quotation,converted,quotCount}); await sync(); toast('Saved ✅','ok'); }
+  catch(e){ fail('Failed: '+e.message); }
 }
 async function tickReceived(id,val){
   try{ await api('setSalesReceived',{id,value:val}); await sync(); toast(val?'Marked received ✅':'Unmarked','ok'); }
@@ -766,6 +914,17 @@ function renderSettings(el){
       </div>
       <button class="btn btn-primary" onclick="saveOpening()">Save opening</button>
     </div>
+    <div class="card" style="margin-bottom:1rem${accessWindowActive()?';border-color:rgba(245,158,11,.35)':''}">
+      <div class="ct">Temporary access window</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:10px">Set the range of dates that may be edited, then the day the window shuts. While it is open, everyone can add or correct entries dated inside that range regardless of the normal same-day and next-morning cutoffs. It switches off on its own the day after it closes — no redeploy needed. Roles and permissions are unchanged; this only lifts the date restriction.</div>
+      <div class="grid3">
+        <div class="f"><label>Editable from</label><input type="date" id="set-wstart" value="${accessWindowStart()}"></div>
+        <div class="f"><label>Editable to (inclusive)</label><input type="date" id="set-wend" value="${accessWindowEnd()}"></div>
+        <div class="f"><label>Window closes after</label><input type="date" id="set-wuntil" value="${accessWindowUntil()}"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveAccessWindow()">Save window</button>
+      <span style="font-size:12px;color:${accessWindowActive()?'var(--green)':'var(--ink3)'};margin-left:10px">${accessWindowActive()?'Currently active':'Currently inactive'}</span>
+    </div>
     <div class="card">
       <div class="ct">Logins</div>
       <div class="tbl-wrap" style="border:none;padding:0"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr></thead><tbody>
@@ -779,6 +938,17 @@ async function saveOpening(){
     await api('setConfig',{key:'openingBalance',value:$('set-obal').value||0});
     await sync(); toast('Opening saved ✅','ok');
   }catch(e){ toast('Failed: '+e.message,'err'); }
+}
+async function saveAccessWindow(){
+  const s=$('set-wstart').value, e=$('set-wend').value, u=$('set-wuntil').value||e;
+  if(s && e && s>e){ toast('The editable range must start on or before it ends.','err'); return; }
+  if(e && u && u<todayStr()){ toast('That closing date has already passed — the window would never open.','err'); return; }
+  try{
+    await api('setConfig',{key:'accessWindowStart',value:s});
+    await api('setConfig',{key:'accessWindowEnd',value:e});
+    await api('setConfig',{key:'accessWindowUntil',value:u});
+    await sync(); toast('Window saved ✅','ok');
+  }catch(err){ toast('Failed: '+err.message,'err'); }
 }
 async function resetPass(id,name){
   const pass = prompt('New password for '+name+':'); if(!pass) return;
