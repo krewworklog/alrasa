@@ -861,6 +861,16 @@ async function tickReceived(id,val){
 }
 
 // ---- SALES TEAM (owner) ----
+// Month choices for the Sales Team page. A <select> is used instead of <input type="month">,
+// which Safari (Mac) and Firefox don't support — there it renders as a dead text box.
+function salesMonthOptions(all, selected){
+  const set = new Set();
+  const d = new Date(todayStr().slice(0,7)+'-01T00:00:00');
+  for(let i=0;i<24;i++){ const m=new Date(d.getFullYear(), d.getMonth()-i, 1); set.add(m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0')); }
+  all.forEach(s=>{ const m=String(s.date||'').slice(0,7); if(/^\d{4}-\d{2}$/.test(m)) set.add(m); });
+  set.add(selected);
+  return [...set].sort().reverse().map(m=>`<option value="${m}"${m===selected?' selected':''}>${monthLabel(m)}</option>`).join('');
+}
 function renderSalesTeam(el){
   const all = DB.sales||[];
   const month = (el.dataset.month)|| todayStr().slice(0,7);
@@ -881,7 +891,7 @@ function renderSalesTeam(el){
   el.innerHTML = `
     <div class="ph"><div class="pt">Sales Team</div><div class="ps">Quotations, conversions and money received by each sales person.</div></div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:1rem">
-      <label style="margin:0">Month</label><input type="month" id="st-month" value="${month}" style="width:auto" onchange="document.getElementById('content').dataset.month=this.value;renderSalesTeam(document.getElementById('content'))">
+      <label style="margin:0">Month</label><select id="st-month" style="width:auto" onchange="document.getElementById('content').dataset.month=this.value;renderSalesTeam(document.getElementById('content'))">${salesMonthOptions(all,month)}</select>
     </div>
     <div class="sg">
       <div class="sc"><div class="sl">Quotations made</div><div class="sv">${totN}</div></div>
