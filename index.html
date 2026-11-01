@@ -329,7 +329,10 @@ async function api(action, params={}){
       const ctrl = new AbortController();
       const timer = setTimeout(()=>ctrl.abort(), 12000);
       try{
-        const res = await fetch(BACKEND_URL, { method:'POST', body, signal: ctrl.signal });
+        // Send the form as a plain string, not a URLSearchParams object: some
+        // browser extensions wrap fetch and try to postMessage the body, which
+        // fails for URLSearchParams ("could not be cloned"). Same request otherwise.
+        const res = await fetch(BACKEND_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body: body.toString(), signal: ctrl.signal });
         const text = await res.text();
         let json=null;
         try{ json = JSON.parse(text); }catch(_){ json=null; }
